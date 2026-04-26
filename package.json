@@ -1,0 +1,22 @@
+{
+  "name": "regirl-qc-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.6.2",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "prettier --write .",
+    "db:migrate": "pnpm --filter @regirl/db prisma:migrate",
+    "db:generate": "pnpm --filter @regirl/db prisma:generate",
+    "db:seed": "pnpm --filter @regirl/db db:seed"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "eslint": "^9.23.0",
+    "prettier": "^3.5.3",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.3"
+  }
+}

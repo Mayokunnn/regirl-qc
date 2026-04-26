@@ -1,0 +1,23 @@
+{
+  "name": "@regirl/worker",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@regirl/ai": "workspace:*",
+    "@regirl/config": "workspace:*",
+    "@regirl/db": "workspace:*",
+    "bullmq": "^5.49.1",
+    "ioredis": "^5.4.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3",
+    "vitest": "^2.1.8"
+  }
+}

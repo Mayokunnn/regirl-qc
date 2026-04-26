@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  supervisor
+  admin
+}
+
+enum SessionStatus {
+  draft
+  submitted
+  processing
+  completed
+  failed
+}
+
+enum Verdict {
+  pass
+  fail
+  uncertain
+}
+
+enum Severity {
+  low
+  medium
+  high
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  sessions QcSession[]
+}
+
+model Style {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  skus          Sku[]
+  referenceSets ReferenceSet[]
+  sessions      QcSession[]
+}
+
+model Sku {
+  id         String   @id @default(cuid())
+  styleId    String
+  code       String   @unique
+  name       String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  style      Style       @relation(fields: [styleId], references: [id])
+  sessions   QcSession[]
+}
+
+model CaptureAngle {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  isRequired  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sessionAngles SessionAngleUpload[]
+}
+
+model Criterion {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ReferenceSet {
+  id              String   @id @default(cuid())
+  styleId         String
+  version         Int
+  isActive        Boolean  @default(false)
+  description     String?
+  promptVersion   String
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  style           Style @relation(fields: [styleId], references: [id])
+  images          ReferenceImage[]
+
+  @@unique([styleId, version])
+}
+
+model ReferenceImage {
+  id             String   @id @default(cuid())
+  referenceSetId String
+  angleKey       String
+  objectKey      String
+  createdAt      DateTime @default(now())
+
+  referenceSet ReferenceSet @relation(fields: [referenceSetId], references: [id])
+}
+
+model QcSession {
+  id                  String        @id @default(cuid())
+  styleId             String
+  skuId               String
+  stylistName         String
+  createdByUserId     String
+  status              SessionStatus @default(draft)
+  submittedAt         DateTime?
+  completedAt         DateTime?
+  finalVerdict        Verdict?
+  finalReworkText     String?
+  promptVersionUsed   String?
+  referenceVersionUsed Int?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  deletedAt           DateTime?
+
+  style         Style               @relation(fields: [styleId], references: [id])
+  sku           Sku                 @relation(fields: [skuId], references: [id])
+  createdBy     User                @relation(fields: [createdByUserId], references: [id])
+  angleUploads  SessionAngleUpload[]
+  evaluations   SessionEvaluation[]
+  reworkFeedback ReworkFeedback[]
+}
+
+model SessionAngleUpload {
+  id          String   @id @default(cuid())
+  sessionId   String
+  angleId     String
+  objectKey   String
+  uploadedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  session QcSession     @relation(fields: [sessionId], references: [id])
+  angle   CaptureAngle  @relation(fields: [angleId], references: [id])
+
+  @@unique([sessionId, angleId])
+}
+
+model SessionEvaluation {
+  id                  String   @id @default(cuid())
+  sessionId           String
+  provider            String
+  fallbackUsed        Boolean  @default(false)
+  overallVerdict      Verdict
+  confidence          Float
+  reworkInstructions  String
+  promptVersion       String
+  referenceSetVersion Int
+  createdAt           DateTime @default(now())
+
+  session QcSession @relation(fields: [sessionId], references: [id])
+  criteria SessionCriterionResult[]
+}
+
+model SessionCriterionResult {
+  id           String   @id @default(cuid())
+  evaluationId String
+  criterionKey String
+  verdict      Verdict
+  confidence   Float
+  severity     Severity
+  message      String
+
+  evaluation SessionEvaluation @relation(fields: [evaluationId], references: [id])
+}
+
+model ReworkFeedback {
+  id           String   @id @default(cuid())
+  sessionId     String
+  userId        String
+  helpful       Boolean
+  comment       String?
+  createdAt     DateTime @default(now())
+
+  session QcSession @relation(fields: [sessionId], references: [id])
+}

@@ -1,0 +1,72 @@
+import { useNavigate, useLocation } from 'react-router-dom'
+import { useSession } from '../context/SessionContext'
+
+const BRAND = '#3B0F0D'
+const CREAM = '#FFFCF2'
+
+const CameraIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+    <circle cx="12" cy="13" r="4"/>
+  </svg>
+)
+
+const HistoryIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <polyline points="12 6 12 12 16 14"/>
+  </svg>
+)
+
+export default function BottomNav() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { inProgressSessions } = useSession()
+
+  const isHistory = location.pathname === '/history'
+  const isSession = !isHistory
+
+  return (
+    <nav
+      style={{ backgroundColor: BRAND, color: CREAM }}
+      className="fixed bottom-0 left-0 right-0 flex z-50 max-w-[430px] mx-auto left-0 right-0"
+    >
+      <button
+        onClick={() => navigate('/new-session')}
+        className="flex-1 flex flex-col items-center justify-center py-3 gap-1 border-0 cursor-pointer transition-opacity relative"
+        style={{
+          backgroundColor: 'transparent',
+          color: CREAM,
+          opacity: isSession ? 1 : 0.55,
+        }}
+      >
+        <div className="relative">
+          <CameraIcon />
+          {/* Badge showing how many sessions are in progress */}
+          {inProgressSessions.length > 0 && (
+            <span
+              className="absolute -top-1.5 -right-2 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold px-1"
+              style={{ backgroundColor: '#d97706', color: '#fff' }}
+            >
+              {inProgressSessions.length}
+            </span>
+          )}
+        </div>
+        <span className="text-xs font-medium tracking-wide">New Session</span>
+      </button>
+
+      <button
+        onClick={() => navigate('/history')}
+        className="flex-1 flex flex-col items-center justify-center py-3 gap-1 border-0 cursor-pointer transition-opacity"
+        style={{
+          backgroundColor: 'transparent',
+          color: CREAM,
+          opacity: isHistory ? 1 : 0.55,
+        }}
+      >
+        <HistoryIcon />
+        <span className="text-xs font-medium tracking-wide">History</span>
+      </button>
+    </nav>
+  )
+}
