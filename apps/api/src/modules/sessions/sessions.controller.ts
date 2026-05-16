@@ -25,6 +25,10 @@ class CreateSessionDto {
 
   @IsString()
   @IsNotEmpty()
+  wigId!: string;
+
+  @IsString()
+  @IsNotEmpty()
   stylistName!: string;
 }
 
@@ -32,6 +36,12 @@ class ConfirmUploadDto {
   @IsString()
   @IsNotEmpty()
   objectKey!: string;
+}
+
+class SupervisorOverrideDto {
+  @IsString()
+  @IsNotEmpty()
+  reason!: string;
 }
 
 class ReworkFeedbackDto {
@@ -95,6 +105,19 @@ export class SessionsController {
   @Get(':id/status')
   status(@Param('id') id: string) {
     return this.sessionsService.getStatus(id);
+  }
+
+  /** Supervisor approves an ADVISORY-verdict session with a written reason */
+  @Post(':id/override')
+  override(
+    @Param('id') id: string,
+    @Body() body: SupervisorOverrideDto,
+    @Req() req: { user: { userId: string } }
+  ) {
+    return this.sessionsService.supervisorOverride(id, {
+      userId: req.user.userId,
+      reason: body.reason
+    });
   }
 
   @Post(':id/rework-feedback')

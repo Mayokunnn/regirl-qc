@@ -11,9 +11,12 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "@regirl/config": "workspace:*",
     "@regirl/types": "workspace:*",
-    "@regirl/utils": "workspace:*"
+    "@regirl/utils": "workspace:*",
+    "openai": "^4.77.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "vitest": "^2.1.8"

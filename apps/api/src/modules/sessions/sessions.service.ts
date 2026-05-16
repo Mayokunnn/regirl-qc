@@ -13,11 +13,18 @@ export class SessionsService {
     private readonly queueService: QueueService
   ) {}
 
-  async createDraftSession(payload: { styleId: string; skuId: string; stylistName: string; userId: string }) {
+  async createDraftSession(payload: {
+    styleId: string;
+    skuId: string;
+    wigId: string;
+    stylistName: string;
+    userId: string;
+  }) {
     return this.prisma.qcSession.create({
       data: {
         styleId: payload.styleId,
         skuId: payload.skuId,
+        wigId: payload.wigId,
         stylistName: payload.stylistName,
         createdByUserId: payload.userId,
         status: SessionStatus.draft
@@ -49,9 +56,12 @@ export class SessionsService {
       items: items.map((item) => ({
         id: item.id,
         sku: item.sku.code,
+        skuName: item.sku.name,
+        wigId: item.wigId,
         stylistName: item.stylistName,
         verdict: item.finalVerdict,
         status: item.status,
+        supervisorOverrideReason: item.supervisorOverrideReason,
         createdAt: item.createdAt,
         submittedAt: item.submittedAt,
         completedAt: item.completedAt
@@ -66,25 +76,26 @@ export class SessionsService {
         sku: true,
         style: true,
         angleUploads: { include: { angle: true } },
-        evaluations: { include: { criteria: true }, orderBy: { createdAt: 'desc' } }
+        evaluations: {
+          include: { criteria: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
       }
     });
 
     if (!session) throw new NotFoundException('Session not found');
 
     const angleImages = await Promise.all(
-      session.angleUploads.map(async (angleUpload) => ({
-        angleKey: angleUpload.angle.key,
-        uploadedAt: angleUpload.uploadedAt,
-        objectKey: angleUpload.objectKey,
-        url: await this.storage.createReadUrl(angleUpload.objectKey)
+      session.angleUploads.map(async (upload) => ({
+        angleKey: upload.angle.key,
+        angleLabel: upload.angle.label,
+        uploadedAt: upload.uploadedAt,
+        url: await this.storage.createReadUrl(upload.objectKey)
       }))
     );
 
-    return {
-      ...session,
-      angleImages
-    };
+    return { ...session, angleImages };
   }
 
   async requestUploadUrl(sessionId: string, angleKey: string) {
@@ -116,9 +127,7 @@ export class SessionsService {
       where: { sessionId_angleId: { sessionId, angleId: angle.id } }
     });
 
-    if (!upload || upload.objectKey !== objectKey) {
-      throw new BadRequestException('Upload mismatch');
-    }
+    if (!upload || upload.objectKey !== objectKey) throw new BadRequestException('Upload mismatch');
 
     return this.prisma.sessionAngleUpload.update({
       where: { id: upload.id },
@@ -139,8 +148,8 @@ export class SessionsService {
       })
     ]);
 
-    const uploadedKeys = new Set(uploads.map((item) => item.angle.key));
-    const missing = requiredAngles.filter((angle) => !uploadedKeys.has(angle.key)).map((angle) => angle.key);
+    const uploadedKeys = new Set(uploads.map((u) => u.angle.key));
+    const missing = requiredAngles.filter((a) => !uploadedKeys.has(a.key)).map((a) => a.key);
 
     if (missing.length > 0) {
       throw new BadRequestException(`Missing required angle uploads: ${missing.join(', ')}`);
@@ -152,7 +161,6 @@ export class SessionsService {
     });
 
     await this.queueService.enqueueSessionEvaluation(sessionId);
-
     return { queued: true };
   }
 
@@ -168,9 +176,29 @@ export class SessionsService {
       id: session.id,
       status: session.status,
       verdict: session.finalVerdict,
+      supervisorOverrideReason: session.supervisorOverrideReason,
       completedAt: session.completedAt,
       latestEvaluation: session.evaluations[0] ?? null
     };
+  }
+
+  /** Supervisor approves an ADVISORY verdict with a written reason (PRD §8.4) */
+  async supervisorOverride(sessionId: string, payload: { userId: string; reason: string }) {
+    const session = await this.prisma.qcSession.findUnique({ where: { id: sessionId } });
+    if (!session) throw new NotFoundException('Session not found');
+    if (session.finalVerdict !== Verdict.advisory) {
+      throw new BadRequestException('Override is only allowed for sessions with an ADVISORY verdict');
+    }
+    if (!payload.reason.trim()) throw new BadRequestException('Override reason cannot be empty');
+
+    return this.prisma.qcSession.update({
+      where: { id: sessionId },
+      data: {
+        finalVerdict: Verdict.pass,
+        supervisorOverrideReason: payload.reason.trim(),
+        supervisorOverrideAt: new Date()
+      }
+    });
   }
 
   async saveReworkFeedback(sessionId: string, payload: { userId: string; helpful: boolean; comment?: string }) {

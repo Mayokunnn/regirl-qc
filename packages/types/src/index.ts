@@ -14,50 +14,77 @@ export enum SessionStatus {
 export enum Verdict {
   PASS = 'pass',
   FAIL = 'fail',
-  UNCERTAIN = 'uncertain'
+  ADVISORY = 'advisory',
+  NEEDS_REVIEW = 'needs_review'
 }
 
 export enum Severity {
-  LOW = 'low',
-  MEDIUM = 'medium',
-  HIGH = 'high'
+  MAJOR = 'major',
+  MINOR = 'minor'
 }
 
-export interface EvaluationCriterionResult {
-  criterionKey: string;
-  verdict: Verdict;
-  confidence: number;
-  severity: Severity;
-  message: string;
+export enum EvaluationType {
+  CONFORMITY = 'conformity',
+  PROPORTIONAL = 'proportional',
+  POSITIONAL = 'positional',
+  SURFACE = 'surface'
 }
 
-export interface SessionEvaluationResult {
-  verdict: Verdict;
-  confidence: number;
-  criteria: EvaluationCriterionResult[];
-  reworkInstructions: string;
-  promptVersion: string;
-  referenceSetVersion: string;
-  provider: string;
-  fallbackUsed: boolean;
+export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
+
+export interface CriterionPayload {
+  key: string;
+  label: string;
+  description: string;
+  acceptableStandard: string;
+  severityIfFailed: Severity;
+  evaluationType: EvaluationType;
 }
 
 export interface AnglePayload {
   angleKey: string;
-  imageObjectKey: string;
-  skuCode: string;
-  stylistName: string;
-  criteriaKeys: string[];
-  seedHint: string;
+  angleLabel: string;
+  supervisorInstruction: string;
+  /** Base64-encoded JPEG of the supervisor's submission photo */
+  submissionImageBase64: string;
+  /** Base64-encoded JPEGs of the reference images for this angle */
+  referenceImagesBase64: string[];
+  /** Admin-entered annotation notes — one per reference image */
+  referenceAnnotationNotes: string[];
+  /** Criteria that apply to this angle */
+  criteria: CriterionPayload[];
 }
 
 export interface SessionPayload {
   sessionId: string;
   skuCode: string;
   styleName: string;
+  styleNuanceContext: string;
   stylistName: string;
-  angles: Array<{ angleKey: string; imageObjectKey: string }>;
-  criteriaKeys: string[];
-  referenceSetVersion: string;
+  wigId: string;
+  angles: AnglePayload[];
+  referenceSetVersion: number;
   promptVersion: string;
+}
+
+export interface EvaluationCriterionResult {
+  criterionKey: string;
+  /** PASS or FAIL — session-level ADVISORY/NEEDS_REVIEW is derived by the worker */
+  verdict: 'PASS' | 'FAIL';
+  confidence: ConfidenceLevel;
+  /** null when verdict is PASS */
+  severity: Severity | null;
+  failureReason: string | null;
+  reworkInstruction: string | null;
+}
+
+export interface SessionEvaluationResult {
+  verdict: Verdict;
+  criteria: EvaluationCriterionResult[];
+  /** Human-readable summary of all rework actions needed */
+  reworkInstructions: string;
+  promptVersion: string;
+  referenceSetVersion: number;
+  provider: string;
+  fallbackUsed: boolean;
 }
