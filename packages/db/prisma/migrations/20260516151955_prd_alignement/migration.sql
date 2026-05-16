@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "QcSession" ALTER COLUMN "wigId" DROP DEFAULT;
