@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useSession } from '../context/SessionContext'
-import { CAPTURE_ANGLES } from '../mockData'
+
+const TOTAL_ANGLES = 7
 
 const BRAND = '#3B0F0D'
 const OFF_WHITE = '#FFFCF2'
@@ -42,12 +43,12 @@ export default function SessionSwitcher() {
         {others.map((s) => {
           const isProcessing = s.status === 'processing'
           const isCompleted = s.status === 'completed'
-          const photoCount = CAPTURE_ANGLES.filter((a) => !!s.photos[a.id]).length
+          const uploadedCount = Object.values(s.uploads ?? {}).filter((u) => u.uploaded).length
 
           let statusLine
           if (isProcessing) statusLine = 'Analysing…'
           else if (isCompleted) statusLine = 'Done — tap to view'
-          else statusLine = `${photoCount} / ${CAPTURE_ANGLES.length} photos`
+          else statusLine = `${uploadedCount} / ${TOTAL_ANGLES} photos`
 
           const chipBg = isCompleted ? 'rgba(22,163,74,0.12)' : WARM_CREAM
           const chipBorder = isCompleted

@@ -1,32 +1,71 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useEffect, useRef } from 'react'
+import { pollStatus, getSessionDetail, mapSessionResult } from '../api'
 
 const SessionContext = createContext(null)
 
-function generateId() {
+function generateLocalId() {
   return `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 }
 
 export function SessionProvider({ children }) {
-  // All sessions ever created in this app launch (uploading / processing / completed)
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState(null)
+  const pollingRef = useRef({}) // { [localId]: intervalId }
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null
   const inProgressSessions = sessions.filter((s) => s.status !== 'completed')
 
-  /** Create a brand-new session and make it active. Returns the new id. */
-  function createSession({ skuId, skuLabel, stylistName, wigId }) {
-    const id = generateId()
+  // Poll any sessions that are in 'processing' state
+  useEffect(() => {
+    sessions.forEach((session) => {
+      if (session.status === 'processing' && session.apiSessionId && !pollingRef.current[session.id]) {
+        pollingRef.current[session.id] = setInterval(async () => {
+          try {
+            const status = await pollStatus(session.apiSessionId)
+            if (status.status === 'completed') {
+              clearInterval(pollingRef.current[session.id])
+              delete pollingRef.current[session.id]
+              const detail = await getSessionDetail(session.apiSessionId)
+              const result = mapSessionResult(detail)
+              setSessions((prev) =>
+                prev.map((s) =>
+                  s.id === session.id ? { ...s, status: 'completed', result } : s
+                )
+              )
+            } else if (status.status === 'failed') {
+              clearInterval(pollingRef.current[session.id])
+              delete pollingRef.current[session.id]
+              setSessions((prev) =>
+                prev.map((s) => (s.id === session.id ? { ...s, status: 'error' } : s))
+              )
+            }
+          } catch {
+            // network hiccup — keep polling
+          }
+        }, 3000)
+      }
+    })
+  }, [sessions])
+
+  // Clean up intervals on unmount
+  useEffect(() => {
+    return () => Object.values(pollingRef.current).forEach(clearInterval)
+  }, [])
+
+  function createSession({ apiSessionId, skuId, skuName, styleId, stylistName, wigId }) {
+    const id = generateLocalId()
     setSessions((prev) => [
       ...prev,
       {
         id,
+        apiSessionId,
         status: 'uploading',
         skuId,
-        skuLabel,
+        skuLabel: skuName,
+        styleId,
         stylistName,
         wigId,
-        photos: {},
+        uploads: {}, // { [angleKey]: { preview: dataUrl, uploaded: boolean } }
         result: null,
         createdAt: new Date().toISOString(),
       },
@@ -35,47 +74,22 @@ export function SessionProvider({ children }) {
     return id
   }
 
-  /** Add / replace a photo on the active session. */
-  function setPhoto(angleId, dataUrl) {
+  function setAngleUpload(angleKey, preview, uploaded) {
     setSessions((prev) =>
       prev.map((s) =>
         s.id === activeSessionId
-          ? { ...s, photos: { ...s.photos, [angleId]: dataUrl } }
+          ? { ...s, uploads: { ...s.uploads, [angleKey]: { preview, uploaded } } }
           : s
       )
     )
   }
 
-  /** Update the status of the active session (e.g. 'processing'). */
   function setActiveSessionStatus(status) {
     setSessions((prev) =>
       prev.map((s) => (s.id === activeSessionId ? { ...s, status } : s))
     )
   }
 
-  /** Store the QC result and mark the active session as completed. */
-  function setActiveSessionResult(result) {
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === activeSessionId ? { ...s, status: 'completed', result } : s
-      )
-    )
-  }
-
-  /**
-   * Same as above but takes an explicit session ID — safe to call from a
-   * background promise after the user has already navigated away and the
-   * active session may have changed.
-   */
-  function setSessionResult(sessionId, result) {
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === sessionId ? { ...s, status: 'completed', result } : s
-      )
-    )
-  }
-
-  /** Switch which session is "active" (shown in Upload / Results). */
   function switchSession(id) {
     setActiveSessionId(id)
   }
@@ -88,10 +102,8 @@ export function SessionProvider({ children }) {
         activeSessionId,
         inProgressSessions,
         createSession,
-        setPhoto,
+        setAngleUpload,
         setActiveSessionStatus,
-        setActiveSessionResult,
-        setSessionResult,
         switchSession,
       }}
     >

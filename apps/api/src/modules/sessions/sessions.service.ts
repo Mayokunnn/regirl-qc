@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { SessionStatus, Verdict } from '@regirl/db';
 import { getStorage } from '@regirl/storage';
 import { PrismaService } from '../../common/prisma.service';
@@ -117,6 +118,26 @@ export class SessionsService {
     });
 
     return { objectKey, uploadUrl };
+  }
+
+  async uploadAngleFile(sessionId: string, angleKey: string, buffer: Buffer) {
+    const [session, angle] = await Promise.all([
+      this.prisma.qcSession.findUnique({ where: { id: sessionId } }),
+      this.prisma.captureAngle.findUnique({ where: { key: angleKey } })
+    ]);
+
+    if (!session) throw new NotFoundException('Session not found');
+    if (!angle) throw new NotFoundException('Angle not found');
+    if (session.status !== SessionStatus.draft) throw new BadRequestException('Session is not in draft state');
+
+    const objectKey = `sessions/${sessionId}/${angleKey}/${randomUUID()}.jpg`;
+    await this.storage.putObject(objectKey, buffer);
+
+    return this.prisma.sessionAngleUpload.upsert({
+      where: { sessionId_angleId: { sessionId, angleId: angle.id } },
+      update: { objectKey, uploadedAt: new Date() },
+      create: { sessionId, angleId: angle.id, objectKey, uploadedAt: new Date() }
+    });
   }
 
   async confirmUpload(sessionId: string, angleKey: string, objectKey: string) {

@@ -23,6 +23,8 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
 
+  app.enableCors({ origin: true, credentials: true });
+  app.use(require('express').json({ limit: '20mb' }));
   await app.listen(process.env.PORT ?? 3000);
 }
 

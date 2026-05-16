@@ -8,6 +8,7 @@ import { getEnv } from '@regirl/config';
 export interface StorageAdapter {
   createUploadUrl(objectKeyPrefix: string): Promise<{ objectKey: string; uploadUrl: string }>;
   createReadUrl(objectKey: string): Promise<string>;
+  putObject(objectKey: string, buffer: Buffer): Promise<void>;
 }
 
 class LocalStorageAdapter implements StorageAdapter {
@@ -23,6 +24,12 @@ class LocalStorageAdapter implements StorageAdapter {
 
   async createReadUrl(objectKey: string) {
     return `file://${join(this.basePath, objectKey)}`;
+  }
+
+  async putObject(objectKey: string, buffer: Buffer) {
+    const absPath = join(this.basePath, objectKey);
+    await mkdir(join(absPath, '..'), { recursive: true });
+    await writeFile(absPath, buffer);
   }
 }
 
@@ -53,6 +60,11 @@ class S3StorageAdapter implements StorageAdapter {
     const env = getEnv();
     const command = new GetObjectCommand({ Bucket: this.bucket, Key: objectKey });
     return getSignedUrl(this.client, command, { expiresIn: env.SIGNED_URL_TTL_SECONDS });
+  }
+
+  async putObject(objectKey: string, buffer: Buffer) {
+    const command = new PutObjectCommand({ Bucket: this.bucket, Key: objectKey, Body: buffer });
+    await this.client.send(command);
   }
 }
 

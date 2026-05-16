@@ -38,6 +38,12 @@ class ConfirmUploadDto {
   objectKey!: string;
 }
 
+class UploadFileDto {
+  @IsString()
+  @IsNotEmpty()
+  data!: string; // base64-encoded image
+}
+
 class SupervisorOverrideDto {
   @IsString()
   @IsNotEmpty()
@@ -86,6 +92,16 @@ export class SessionsController {
   @Post(':id/angles/:angleKey/upload-url')
   uploadUrl(@Param('id') id: string, @Param('angleKey') angleKey: string) {
     return this.sessionsService.requestUploadUrl(id, angleKey);
+  }
+
+  @Post(':id/angles/:angleKey/upload-file')
+  uploadFile(
+    @Param('id') id: string,
+    @Param('angleKey') angleKey: string,
+    @Body() body: UploadFileDto
+  ) {
+    const buffer = Buffer.from(body.data, 'base64');
+    return this.sessionsService.uploadAngleFile(id, angleKey, buffer);
   }
 
   @Post(':id/angles/:angleKey/confirm-upload')

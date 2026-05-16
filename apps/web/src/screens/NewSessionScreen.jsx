@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { SKUS } from '../mockData'
+import { fetchSkus, createSession as apiCreateSession } from '../api'
 import { useSession } from '../context/SessionContext'
 
 const BRAND = '#3B0F0D'
@@ -26,27 +26,52 @@ export default function NewSessionScreen() {
   const navigate = useNavigate()
   const { createSession, inProgressSessions } = useSession()
 
+  const [skus, setSkus] = useState([])
+  const [loadingSkus, setLoadingSkus] = useState(true)
   const [skuId, setSkuId] = useState('')
   const [stylistName, setStylistName] = useState('')
   const [wigId, setWigId] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
 
-  const canContinue = skuId && stylistName.trim() && wigId.trim()
+  useEffect(() => {
+    fetchSkus()
+      .then(setSkus)
+      .catch(() => setError('Failed to load SKUs — is the API running?'))
+      .finally(() => setLoadingSkus(false))
+  }, [])
 
-  function handleContinue() {
-    const sku = SKUS.find((s) => s.id === skuId)
-    // Creates a new session alongside any existing ones — does NOT touch them
-    createSession({
-      skuId,
-      skuLabel: sku?.label ?? '',
-      stylistName: stylistName.trim(),
-      wigId: wigId.trim(),
-    })
-    navigate('/upload')
+  const selectedSku = skus.find((s) => s.id === skuId)
+  const canContinue = skuId && stylistName.trim() && wigId.trim() && !submitting
+
+  async function handleContinue() {
+    if (!selectedSku) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const session = await apiCreateSession({
+        styleId: selectedSku.styleId,
+        skuId: selectedSku.id,
+        wigId: wigId.trim(),
+        stylistName: stylistName.trim(),
+      })
+      createSession({
+        apiSessionId: session.id,
+        skuId: selectedSku.id,
+        skuName: selectedSku.name,
+        styleId: selectedSku.styleId,
+        stylistName: stylistName.trim(),
+        wigId: wigId.trim(),
+      })
+      navigate('/upload')
+    } catch {
+      setError('Failed to create session. Please try again.')
+      setSubmitting(false)
+    }
   }
 
   return (
     <div className="flex flex-col min-h-dvh pb-20" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
-      {/* Header */}
       <div className="px-5 pt-10 pb-6">
         <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ opacity: 0.55 }}>
           Regirl QC
@@ -55,33 +80,37 @@ export default function NewSessionScreen() {
         <p className="text-sm mt-1" style={{ opacity: 0.65 }}>
           Enter the wig details before uploading photos.
           {inProgressSessions.length > 0 && (
-            <span> A new session will be created alongside your {inProgressSessions.length} in-progress session{inProgressSessions.length > 1 ? 's' : ''}.</span>
+            <span>
+              {' '}A new session will be created alongside your {inProgressSessions.length} in-progress session{inProgressSessions.length > 1 ? 's' : ''}.
+            </span>
           )}
         </p>
       </div>
 
       <div className="flex-1 px-5 space-y-5">
-        {/* SKU */}
         <div>
           <FieldLabel>Wig SKU</FieldLabel>
-          <select
-            value={skuId}
-            onChange={(e) => setSkuId(e.target.value)}
-            className="w-full rounded-xl px-4 py-3.5 text-sm appearance-none"
-            style={{ ...inputStyle, color: skuId ? BRAND : 'rgba(59,15,13,0.4)' }}
-          >
-            <option value="" disabled>
-              Select a SKU…
-            </option>
-            {SKUS.map((s) => (
-              <option key={s.id} value={s.id} style={{ color: BRAND }}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+          {loadingSkus ? (
+            <div className="w-full rounded-xl px-4 py-3.5 text-sm" style={{ ...inputStyle, opacity: 0.5 }}>
+              Loading SKUs…
+            </div>
+          ) : (
+            <select
+              value={skuId}
+              onChange={(e) => setSkuId(e.target.value)}
+              className="w-full rounded-xl px-4 py-3.5 text-sm appearance-none"
+              style={{ ...inputStyle, color: skuId ? BRAND : 'rgba(59,15,13,0.4)' }}
+            >
+              <option value="" disabled>Select a SKU…</option>
+              {skus.map((s) => (
+                <option key={s.id} value={s.id} style={{ color: BRAND }}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
-        {/* Stylist Name */}
         <div>
           <FieldLabel>Stylist Name</FieldLabel>
           <input
@@ -94,7 +123,6 @@ export default function NewSessionScreen() {
           />
         </div>
 
-        {/* Wig ID */}
         <div>
           <FieldLabel>Wig ID</FieldLabel>
           <input
@@ -106,9 +134,14 @@ export default function NewSessionScreen() {
             style={inputStyle}
           />
         </div>
+
+        {error && (
+          <p className="text-sm font-medium" style={{ color: '#dc2626' }}>
+            {error}
+          </p>
+        )}
       </div>
 
-      {/* CTA */}
       <div className="px-5 pt-6 pb-8">
         <button
           onClick={handleContinue}
@@ -121,7 +154,7 @@ export default function NewSessionScreen() {
             cursor: canContinue ? 'pointer' : 'not-allowed',
           }}
         >
-          Continue
+          {submitting ? 'Creating session…' : 'Continue'}
         </button>
       </div>
     </div>
