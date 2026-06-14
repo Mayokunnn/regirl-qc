@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { rateCriterion } from '../api'
 
@@ -32,10 +32,13 @@ export default function RateInstructionsScreen() {
     }
   }
 
-  if (failedCriteria.length === 0) {
-    navigate('/upload', { replace: true })
-    return null
-  }
+  useEffect(() => {
+    if (failedCriteria.length === 0) {
+      navigate('/upload', { replace: true })
+    }
+  }, [failedCriteria.length, navigate])
+
+  if (failedCriteria.length === 0) return null
 
   return (
     <div className="flex flex-col min-h-dvh pb-24" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
