@@ -408,15 +408,7 @@ class MockVisionEvaluator implements VisionEvaluator {
       }
     }
 
-    // Deduplicate: if same criterionKey appears in multiple angles, keep the worst result
-    const deduped = new Map<string, EvaluationCriterionResult>();
-    for (const r of allCriteria) {
-      const existing = deduped.get(r.criterionKey);
-      if (!existing || (existing.verdict === 'PASS' && r.verdict === 'FAIL')) {
-        deduped.set(r.criterionKey, r);
-      }
-    }
-    const finalCriteria = Array.from(deduped.values());
+    const finalCriteria = deduplicateCriteria(allCriteria);
 
     const verdict = deriveSessionVerdict(finalCriteria);
     return {
