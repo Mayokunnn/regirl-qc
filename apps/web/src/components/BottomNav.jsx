@@ -1,5 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useSession } from '../context/SessionContext'
+import { useAuth } from '../context/AuthContext'
 
 const BRAND = '#3B0F0D'
 const CREAM = '#FFFCF2'
@@ -18,31 +19,36 @@ const HistoryIcon = () => (
   </svg>
 )
 
+const AdminIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+    <path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>
+  </svg>
+)
+
 export default function BottomNav() {
   const navigate = useNavigate()
   const location = useLocation()
   const { inProgressSessions } = useSession()
+  const { role } = useAuth()
 
   const isHistory = location.pathname === '/history'
-  const isSession = !isHistory
+  const isAdmin = location.pathname.startsWith('/admin')
+  const isSession = !isHistory && !isAdmin
 
   return (
     <nav
       style={{ backgroundColor: BRAND, color: CREAM }}
-      className="fixed bottom-0 left-0 right-0 flex z-50 max-w-[430px] mx-auto left-0 right-0"
+      className="fixed bottom-0 left-0 right-0 flex z-50 max-w-[430px] mx-auto"
     >
       <button
         onClick={() => navigate('/new-session')}
         className="flex-1 flex flex-col items-center justify-center py-3 gap-1 border-0 cursor-pointer transition-opacity relative"
-        style={{
-          backgroundColor: 'transparent',
-          color: CREAM,
-          opacity: isSession ? 1 : 0.55,
-        }}
+        style={{ backgroundColor: 'transparent', color: CREAM, opacity: isSession ? 1 : 0.55 }}
       >
         <div className="relative">
           <CameraIcon />
-          {/* Badge showing how many sessions are in progress */}
           {inProgressSessions.length > 0 && (
             <span
               className="absolute -top-1.5 -right-2 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold px-1"
@@ -58,15 +64,22 @@ export default function BottomNav() {
       <button
         onClick={() => navigate('/history')}
         className="flex-1 flex flex-col items-center justify-center py-3 gap-1 border-0 cursor-pointer transition-opacity"
-        style={{
-          backgroundColor: 'transparent',
-          color: CREAM,
-          opacity: isHistory ? 1 : 0.55,
-        }}
+        style={{ backgroundColor: 'transparent', color: CREAM, opacity: isHistory ? 1 : 0.55 }}
       >
         <HistoryIcon />
         <span className="text-xs font-medium tracking-wide">History</span>
       </button>
+
+      {role === 'admin' && (
+        <button
+          onClick={() => navigate('/admin')}
+          className="flex-1 flex flex-col items-center justify-center py-3 gap-1 border-0 cursor-pointer transition-opacity"
+          style={{ backgroundColor: 'transparent', color: CREAM, opacity: isAdmin ? 1 : 0.55 }}
+        >
+          <AdminIcon />
+          <span className="text-xs font-medium tracking-wide">Admin</span>
+        </button>
+      )}
     </nav>
   )
 }
