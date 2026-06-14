@@ -1,22 +1,13 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSession } from '../context/SessionContext'
-import { uploadAngleFile, submitSession } from '../api'
+import { uploadAngleFile, submitSession, fetchAngles } from '../api'
 import SessionSwitcher from '../components/SessionSwitcher'
 
 const BRAND = '#3B0F0D'
 const OFF_WHITE = '#FFFCF2'
 const WARM_CREAM = '#FFF3DD'
 
-const CAPTURE_ANGLES = [
-  { key: 'FRONT_FULL', label: 'Front Full', instruction: 'Stand directly in front — full wig crown to hem visible, ruler visible on one side' },
-  { key: 'LEFT_PROFILE', label: 'Left Profile', instruction: 'Stand directly to the left — full side profile visible, ruler visible' },
-  { key: 'RIGHT_PROFILE', label: 'Right Profile', instruction: 'Stand directly to the right — full side profile visible, ruler visible' },
-  { key: 'BACK_FULL', label: 'Back Full', instruction: 'Stand directly behind — full back view visible, ruler visible' },
-  { key: 'TOP_DOWN', label: 'Top Down', instruction: 'Hold phone above mannequin head angled downward' },
-  { key: 'CLOSEUP_LACE', label: 'Close-up Lace', instruction: 'Camera 15–20cm from T-closure lace area' },
-  { key: 'CLOSEUP_ENDS', label: 'Close-up Ends', instruction: 'Camera 15–20cm from the ends of the hair' },
-]
 
 const UploadIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -103,8 +94,31 @@ function AngleSlot({ angle, upload, onUpload }) {
 export default function PhotoUploadScreen() {
   const navigate = useNavigate()
   const { activeSession, setAngleUpload, setActiveSessionStatus } = useSession()
+  const [angles, setAngles] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+
+  useEffect(() => {
+    if (!activeSession?.styleId) return
+    fetchAngles(activeSession.styleId)
+      .then((data) => setAngles(data.map((a) => ({
+        key: a.key,
+        label: a.label,
+        instruction: a.supervisorInstruction ?? '',
+      }))))
+      .catch(() => {
+        setAngles([
+          { key: 'FRONT_FULL', label: 'Front — Full View', instruction: 'Stand directly in front of mannequin at face height. Wig fully visible crown to hem. Vertical ruler visible on one side.' },
+          { key: 'LEFT_PROFILE', label: 'Left Profile', instruction: 'Stand directly to the left — full side profile visible, ruler visible.' },
+          { key: 'RIGHT_PROFILE', label: 'Right Profile', instruction: 'Stand directly to the right — full side profile visible, ruler visible.' },
+          { key: 'BACK_FULL', label: 'Back — Full View', instruction: 'Stand directly behind — full back view visible, ruler visible.' },
+          { key: 'TOP_DOWN', label: 'Top Down', instruction: 'Hold phone above mannequin head angled downward.' },
+          { key: 'CLOSEUP_LACE', label: 'Close-up Lace', instruction: 'Camera 15–20cm from T-closure lace area.' },
+          { key: 'CLOSEUP_ENDS', label: 'Close-up Ends', instruction: 'Camera 15–20cm from the ends of the hair.' },
+        ])
+      })
+  }, [activeSession?.styleId])
 
   if (!activeSession) {
     navigate('/new-session', { replace: true })
@@ -112,25 +126,32 @@ export default function PhotoUploadScreen() {
   }
 
   const uploads = activeSession.uploads ?? {}
-  const uploadedCount = CAPTURE_ANGLES.filter((a) => uploads[a.key]?.uploaded).length
-  const allUploaded = uploadedCount === CAPTURE_ANGLES.length
+  const uploadedCount = angles.filter((a) => uploads[a.key]?.uploaded).length
+  const allUploaded = uploadedCount === angles.length
 
   async function handleUpload(angleKey, file) {
-    // Show preview immediately
+    console.log(`[upload] selected file for angle=${angleKey} name=${file.name} size=${file.size} type=${file.type}`)
     const reader = new FileReader()
     reader.onload = async () => {
       const dataUrl = reader.result
+      console.log(`[upload] FileReader done for angle=${angleKey}, setting preview`)
       setAngleUpload(angleKey, dataUrl, false)
 
-      // Strip the data URL prefix to get raw base64
       const base64 = dataUrl.split(',')[1]
+      console.log(`[upload] calling API — sessionId=${activeSession.apiSessionId} angleKey=${angleKey} base64Length=${base64?.length}`)
       try {
-        await uploadAngleFile(activeSession.apiSessionId, angleKey, base64)
+        const result = await uploadAngleFile(activeSession.apiSessionId, angleKey, base64)
+        console.log(`[upload] SUCCESS for angle=${angleKey}`, result)
         setAngleUpload(angleKey, dataUrl, true)
-      } catch {
-        // Reset on failure so supervisor can retry
+      } catch (err) {
+        console.error(`[upload] FAILED for angle=${angleKey}`, err)
         setAngleUpload(angleKey, dataUrl, false)
+        setSubmitError(`Upload failed for ${angleKey}: ${err?.message ?? 'Unknown error'}`)
       }
+    }
+    reader.onerror = (err) => {
+      console.error(`[upload] FileReader error for angle=${angleKey}`, err)
+      setSubmitError(`Could not read file for ${angleKey}`)
     }
     reader.readAsDataURL(file)
   }
@@ -141,9 +162,10 @@ export default function PhotoUploadScreen() {
     try {
       await submitSession(activeSession.apiSessionId)
       setActiveSessionStatus('processing')
-      navigate('/new-session')
+      setSubmitted(true)
     } catch (err) {
       setSubmitError(err.message ?? 'Submission failed. Please try again.')
+    } finally {
       setSubmitting(false)
     }
   }
@@ -161,7 +183,7 @@ export default function PhotoUploadScreen() {
       <div className="px-5 mb-5">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-sm font-semibold">
-            {uploadedCount} of {CAPTURE_ANGLES.length} photos uploaded
+            {uploadedCount} of {angles.length} photos uploaded
           </span>
           {allUploaded && (
             <span className="text-xs font-bold" style={{ color: '#16a34a' }}>Ready to submit</span>
@@ -170,13 +192,13 @@ export default function PhotoUploadScreen() {
         <div className="w-full h-2 rounded-full" style={{ backgroundColor: 'rgba(59,15,13,0.12)' }}>
           <div
             className="h-2 rounded-full transition-all duration-300"
-            style={{ width: `${(uploadedCount / CAPTURE_ANGLES.length) * 100}%`, backgroundColor: BRAND }}
+            style={{ width: `${(uploadedCount / angles.length) * 100}%`, backgroundColor: BRAND }}
           />
         </div>
       </div>
 
       <div className="flex-1 px-5 space-y-4">
-        {CAPTURE_ANGLES.map((angle) => (
+        {angles.map((angle) => (
           <AngleSlot
             key={angle.key}
             angle={angle}
@@ -191,19 +213,25 @@ export default function PhotoUploadScreen() {
       )}
 
       <div className="px-5 pt-6 pb-8">
-        <button
-          onClick={handleSubmit}
-          disabled={!allUploaded || submitting}
-          className="w-full py-4 rounded-xl text-base font-bold tracking-wide transition-opacity"
-          style={{
-            backgroundColor: BRAND,
-            color: OFF_WHITE,
-            opacity: allUploaded && !submitting ? 1 : 0.35,
-            cursor: allUploaded && !submitting ? 'pointer' : 'not-allowed',
-          }}
-        >
-          {submitting ? 'Submitting…' : 'Submit for QC'}
-        </button>
+        {submitted ? (
+          <div className="w-full py-4 rounded-xl text-base font-bold tracking-wide text-center" style={{ backgroundColor: '#16a34a', color: '#fff' }}>
+            Submitted — processing…
+          </div>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={!allUploaded || submitting}
+            className="w-full py-4 rounded-xl text-base font-bold tracking-wide transition-opacity"
+            style={{
+              backgroundColor: BRAND,
+              color: OFF_WHITE,
+              opacity: allUploaded && !submitting ? 1 : 0.35,
+              cursor: allUploaded && !submitting ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {submitting ? 'Submitting…' : 'Submit for QC'}
+          </button>
+        )}
       </div>
     </div>
   )
