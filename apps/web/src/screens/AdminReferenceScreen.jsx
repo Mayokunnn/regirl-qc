@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { fetchReferenceSetAngles, uploadReferenceImage, activateReferenceSet, fetchReferenceSets } from '../api'
 
@@ -103,7 +103,7 @@ export default function AdminReferenceScreen() {
   const anglesWithImages = ALL_ANGLES.filter((a) => (angleImages[a.key] ?? []).length > 0).length
   const canActivate = anglesWithImages === ALL_ANGLES.length && !isActive
 
-  async function load() {
+  const load = useCallback(async () => {
     if (!referenceSetId) return
     try {
       const [imagesData, sets] = await Promise.all([
@@ -118,9 +118,9 @@ export default function AdminReferenceScreen() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [referenceSetId])
 
-  useEffect(() => { load() }, [referenceSetId])
+  useEffect(() => { load() }, [load])
 
   async function handleActivate() {
     setActivating(true)
