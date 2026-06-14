@@ -13,7 +13,7 @@ const SEVERITY_COLORS = {
 }
 
 export default function CriterionCard({ criterion }) {
-  const { label, status, confidence, severity, failureReason, reworkInstructions, captureAngle } =
+  const { label, status, confidence, severity, failureReason, failureLocation, reworkInstructions, captureAngle } =
     criterion
   const isPassed = status === 'PASS'
 
@@ -48,6 +48,21 @@ export default function CriterionCard({ criterion }) {
           </span>
         </div>
       </div>
+
+      {!isPassed && failureLocation && (
+        <div className="mb-2">
+          <span
+            className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: 'rgba(59,15,13,0.08)', color: BRAND }}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            {failureLocation}
+          </span>
+        </div>
+      )}
 
       <div className="flex items-center gap-3 mb-2">
         <span className="text-xs" style={{ opacity: 0.65 }}>
