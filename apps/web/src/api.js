@@ -114,16 +114,55 @@ export function mapSessionResult(session) {
     wigId: session.wigId,
     timestamp: session.completedAt ?? session.updatedAt,
     criteria: evaluation.criteria.map((c) => ({
-      id: c.criterionKey,
+      id: c.id,
+      criterionKey: c.criterionKey,
       label: CRITERION_LABELS[c.criterionKey] ?? c.criterionKey,
       status: c.verdict === 'pass' ? 'PASS' : 'FAIL',
       confidence: (c.confidence >= 0.8 ? 'HIGH' : c.confidence >= 0.5 ? 'MEDIUM' : 'LOW'),
       severity: c.severity ? c.severity.toUpperCase() : null,
       failureReason: c.failureReason ?? null,
+      failureLocation: c.failureLocation ?? null,
+      instructionRating: c.instructionRating ?? null,
       reworkInstructions: c.reworkInstruction ?? null,
       captureAngle: null,
     })),
   };
+}
+
+export async function fetchAngles(styleId) {
+  return request('GET', `/styles/${styleId}/angles`);
+}
+
+export async function fetchReferenceSets() {
+  return request('GET', '/admin/reference-sets');
+}
+
+export async function createReferenceSet({ styleId, version, promptVersion, description }) {
+  return request('POST', '/admin/reference-sets', { styleId, version, promptVersion, description, images: [] });
+}
+
+export async function activateReferenceSet(referenceSetId) {
+  return request('POST', `/admin/reference-sets/${referenceSetId}/activate`);
+}
+
+export async function fetchReferenceSetAngles(referenceSetId) {
+  return request('GET', `/admin/reference-sets/${referenceSetId}/angles`);
+}
+
+export async function uploadReferenceImage(referenceSetId, angleKey, base64Data, annotationNote) {
+  return request('POST', `/admin/reference-sets/${referenceSetId}/angles/${angleKey}/upload`, {
+    data: base64Data,
+    annotationNote: annotationNote || undefined,
+  });
+}
+
+export async function rateCriterion(criterionResultId, rating) {
+  return request('POST', `/sessions/criteria/${criterionResultId}/rate`, { rating });
+}
+
+export async function fetchSessionsForWig(wigId) {
+  const data = await request('GET', `/sessions?limit=50`);
+  return data.items.filter((s) => s.wigId === wigId && s.verdict);
 }
 
 function mapHistoryItem(item) {
