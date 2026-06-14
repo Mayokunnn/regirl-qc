@@ -3,6 +3,17 @@ import { AuthGuard } from '@nestjs/passport';
 import { IsArray, IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 import { PrismaService } from '../../common/prisma.service';
 import { Roles, RolesGuard } from '../../common/roles.guard';
+import { getStorage } from '@regirl/storage';
+
+class UploadReferenceImageDto {
+  @IsString()
+  @IsNotEmpty()
+  data!: string; // base64-encoded image
+
+  @IsOptional()
+  @IsString()
+  annotationNote?: string;
+}
 
 class CreateReferenceSetDto {
   @IsString()
@@ -80,5 +91,52 @@ export class AdminController {
       include: { style: true, images: true },
       orderBy: [{ styleId: 'asc' }, { version: 'desc' }]
     });
+  }
+
+  @Post('reference-sets/:id/angles/:angleKey/upload')
+  async uploadReferenceImage(
+    @Param('id') referenceSetId: string,
+    @Param('angleKey') angleKey: string,
+    @Body() body: UploadReferenceImageDto
+  ) {
+    const set = await this.prisma.referenceSet.findUnique({ where: { id: referenceSetId } });
+    if (!set) throw new Error('Reference set not found');
+
+    const buffer = Buffer.from(body.data, 'base64');
+    const objectKey = `references/${referenceSetId}/${angleKey}/${Date.now()}.jpg`;
+    const storage = getStorage();
+    await storage.putObject(objectKey, buffer);
+
+    return this.prisma.referenceImage.create({
+      data: {
+        referenceSetId,
+        angleKey,
+        objectKey,
+        annotationNote: body.annotationNote ?? null
+      }
+    });
+  }
+
+  @Get('reference-sets/:id/angles')
+  async getReferenceSetAngles(@Param('id') referenceSetId: string) {
+    const images = await this.prisma.referenceImage.findMany({
+      where: { referenceSetId },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    const storage = getStorage();
+    const withUrls = await Promise.all(
+      images.map(async (img) => ({
+        ...img,
+        url: await storage.createReadUrl(img.objectKey)
+      }))
+    );
+
+    const grouped: Record<string, typeof withUrls> = {};
+    for (const img of withUrls) {
+      if (!grouped[img.angleKey]) grouped[img.angleKey] = [];
+      grouped[img.angleKey].push(img);
+    }
+    return grouped;
   }
 }
