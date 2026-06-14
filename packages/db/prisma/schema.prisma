@@ -217,6 +217,8 @@ model SessionCriterionResult {
   severity          Severity?
   failureReason     String?
   reworkInstruction String?
+  failureLocation   String?
+  instructionRating String?
 
   evaluation SessionEvaluation @relation(fields: [evaluationId], references: [id])
 }

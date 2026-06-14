@@ -6,7 +6,7 @@
  *   pnpm --filter @regirl/db upload-references
  */
 
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 // Prisma Client auto-loads packages/db/.env (symlink → repo root .env)
 import { PrismaClient } from '@prisma/client';
@@ -26,16 +26,15 @@ const ANGLE_FILES: Record<string, string> = {
   CLOSEUP_ENDS:  'CLOSEUP_ENDS',
 };
 
-// Annotation notes per angle — edit these to describe what the reference shows
-const ANNOTATIONS: Record<string, string> = {
-  FRONT_FULL:    'Hair hem aligns with the 22-inch graduation on the ruler. At least 3 layer steps visible from crown to hem.',
-  LEFT_PROFILE:  'Hair hem aligns with the 22-inch graduation on the ruler. End finish shows soft inward curl.',
-  RIGHT_PROFILE: 'Hair hem aligns with the 22-inch graduation on the ruler. End finish shows soft inward curl.',
-  BACK_FULL:     'Hair hem aligns with the 22-inch graduation on the ruler. Back hemline is even across full width.',
-  TOP_DOWN:      'T-closure lace lies flat. Part is straight, centered, and consistent in width.',
-  CLOSEUP_LACE:  'Lace is undamaged, no fraying, holes, lifting, or adhesive residue.',
-  CLOSEUP_ENDS:  'Ends taper to a soft thin point with a slight inward curl. No blunt cut or split ends visible.',
-};
+/** Reads the XMP dc:description embedded in a JPEG file. */
+async function readXmpDescription(filePath: string): Promise<string | null> {
+  const buf = await readFile(filePath);
+  const str = buf.toString('binary');
+  const match = str.match(/<dc:description>[\s\S]*?<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/);
+  if (!match) return null;
+  // The XMP is stored in latin-1; re-encode to UTF-8 properly
+  return Buffer.from(match[1].trim(), 'binary').toString('utf8');
+}
 
 async function main() {
   const prisma = new PrismaClient();
@@ -68,11 +67,18 @@ async function main() {
       await copyFile(srcPath, destAbs);
       console.log(`  COPIED ${angleKey} → ${destRelative}`);
 
+      const xmpDescription = await readXmpDescription(srcPath);
+      if (xmpDescription) {
+        console.log(`  ANNOTATION from image metadata (${xmpDescription.length} chars)`);
+      } else {
+        console.warn(`  WARNING: no XMP description found in ${srcPath}`);
+      }
+
       await prisma.referenceImage.update({
         where: { id: image.id },
         data: {
           objectKey: destRelative,
-          annotationNote: ANNOTATIONS[angleKey] ?? image.annotationNote,
+          annotationNote: xmpDescription ?? image.annotationNote,
         },
       });
       console.log(`  UPDATED DB annotation for ${angleKey}`);
