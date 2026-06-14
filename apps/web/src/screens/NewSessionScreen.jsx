@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchSkus, createSession as apiCreateSession } from '../api'
+import { fetchSkus, createSession as apiCreateSession, fetchSessionsForWig, getSessionDetail, mapSessionResult } from '../api'
 import { useSession } from '../context/SessionContext'
 
 const BRAND = '#3B0F0D'
@@ -49,6 +49,26 @@ export default function NewSessionScreen() {
     setSubmitting(true)
     setError('')
     try {
+      // Check for previous failed sessions on this wig that need rating
+      let previousFailedCriteria = []
+      try {
+        const priorSessions = await fetchSessionsForWig(wigId.trim())
+        const latestFailed = priorSessions.find(
+          (s) => s.verdict === 'FAIL' || s.verdict === 'ADVISORY'
+        )
+        if (latestFailed) {
+          const detail = await getSessionDetail(latestFailed.id)
+          const mapped = mapSessionResult(detail)
+          if (mapped) {
+            previousFailedCriteria = mapped.criteria.filter(
+              (c) => c.status === 'FAIL' && c.reworkInstructions && !c.instructionRating
+            )
+          }
+        }
+      } catch {
+        // non-blocking — skip rating if lookup fails
+      }
+
       const session = await apiCreateSession({
         styleId: selectedSku.styleId,
         skuId: selectedSku.id,
@@ -63,7 +83,12 @@ export default function NewSessionScreen() {
         stylistName: stylistName.trim(),
         wigId: wigId.trim(),
       })
-      navigate('/upload')
+
+      if (previousFailedCriteria.length > 0) {
+        navigate('/rate-instructions', { state: { criteria: previousFailedCriteria } })
+      } else {
+        navigate('/upload')
+      }
     } catch {
       setError('Failed to create session. Please try again.')
       setSubmitting(false)
