@@ -99,12 +99,15 @@ export class AdminController {
     @Param('angleKey') angleKey: string,
     @Body() body: UploadReferenceImageDto
   ) {
-    const set = await this.prisma.referenceSet.findUnique({ where: { id: referenceSetId } });
-    if (!set) throw new NotFoundException('Reference set not found');
-
     if (!/^[A-Z0-9_]+$/.test(angleKey)) {
       throw new BadRequestException('Invalid angleKey format');
     }
+
+    const angle = await this.prisma.captureAngle.findUnique({ where: { key: angleKey } });
+    if (!angle) throw new NotFoundException(`Angle '${angleKey}' not found`);
+
+    const set = await this.prisma.referenceSet.findUnique({ where: { id: referenceSetId } });
+    if (!set) throw new NotFoundException('Reference set not found');
 
     const buffer = Buffer.from(body.data, 'base64');
     const objectKey = `references/${referenceSetId}/${angleKey}/${Date.now()}.jpg`;
