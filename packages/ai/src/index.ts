@@ -41,6 +41,32 @@ function deriveSessionVerdict(criteria: EvaluationCriterionResult[]): Verdict {
   return Verdict.PASS;
 }
 
+/**
+ * When the same criterion is evaluated across multiple angles, keep only the
+ * worst result per criterion key (FAIL beats PASS; among FAILs, prefer the
+ * one that has a failure reason attached).
+ */
+function deduplicateCriteria(criteria: EvaluationCriterionResult[]): EvaluationCriterionResult[] {
+  const map = new Map<string, EvaluationCriterionResult>();
+  for (const r of criteria) {
+    const existing = map.get(r.criterionKey);
+    if (!existing) {
+      map.set(r.criterionKey, r);
+      continue;
+    }
+    // FAIL beats PASS
+    if (existing.verdict === 'PASS' && r.verdict === 'FAIL') {
+      map.set(r.criterionKey, r);
+      continue;
+    }
+    // Among two FAILs, prefer the one with a failure reason
+    if (existing.verdict === 'FAIL' && r.verdict === 'FAIL' && !existing.failureReason && r.failureReason) {
+      map.set(r.criterionKey, r);
+    }
+  }
+  return Array.from(map.values());
+}
+
 function buildReworkSummary(criteria: EvaluationCriterionResult[]): string {
   const failures = criteria.filter((c) => c.verdict === 'FAIL');
   if (failures.length === 0) return 'No rework required. All criteria passed.';
@@ -123,14 +149,16 @@ For each criterion return a JSON object with exactly these fields:
   "result": "PASS" | "FAIL",
   "confidence": "HIGH" | "MEDIUM" | "LOW",
   "failure_reason": null | "plain-English description of the specific deviation observed",
+  "failure_location": null | "front" | "back" | "ends" | "lace" | "crown" | "left-side" | "right-side",
   "severity": null | "MAJOR" | "MINOR",
   "rework_instruction": null | "2-3 sentence plain-English instruction to the stylist describing exactly what to fix and how"
 }
 
 Rules:
 - severity must be null when result is PASS
-- failure_reason and rework_instruction must be null when result is PASS
+- failure_reason, failure_location and rework_instruction must be null when result is PASS
 - severity must match the criterion's severity_if_failed when result is FAIL
+- failure_location must identify where on the wig the issue was found when result is FAIL
 - rework_instruction must reference the specific capture angle (${angle.angleLabel})`;
 }
 
@@ -162,6 +190,7 @@ const CriterionResponseSchema = z.object({
   result: z.enum(['PASS', 'FAIL']),
   confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   failure_reason: z.string().nullable(),
+  failure_location: z.string().nullable(),
   severity: z.enum(['MAJOR', 'MINOR']).nullable(),
   rework_instruction: z.string().nullable()
 });
@@ -186,6 +215,7 @@ function mapCriterionResponse(r: CriterionResponse): EvaluationCriterionResult {
     confidence: r.confidence,
     severity: r.result === 'FAIL' ? ((r.severity?.toLowerCase() ?? 'minor') as Severity) : null,
     failureReason: r.failure_reason,
+    failureLocation: r.failure_location ?? null,
     reworkInstruction: r.rework_instruction
   };
 }
@@ -201,7 +231,7 @@ class GeminiVisionEvaluator implements VisionEvaluator {
 
   constructor(apiKey: string) {
     this.client = new GoogleGenerativeAI(apiKey);
-    this.model = 'gemini-1.5-flash';
+    this.model = 'gemini-2.0-flash';
   }
 
   async evaluateSession(payload: SessionPayload): Promise<SessionEvaluationResult> {
@@ -235,17 +265,19 @@ class GeminiVisionEvaluator implements VisionEvaluator {
             confidence: 'LOW',
             severity: null,
             failureReason: null,
+            failureLocation: null,
             reworkInstruction: null
           });
         }
       }
     }
 
-    const verdict = deriveSessionVerdict(allCriteria);
+    const finalCriteria = deduplicateCriteria(allCriteria);
+    const verdict = deriveSessionVerdict(finalCriteria);
     return {
       verdict,
-      criteria: allCriteria,
-      reworkInstructions: buildReworkSummary(allCriteria),
+      criteria: finalCriteria,
+      reworkInstructions: buildReworkSummary(finalCriteria),
       promptVersion: payload.promptVersion,
       referenceSetVersion: payload.referenceSetVersion,
       provider: this.providerName,
@@ -313,17 +345,19 @@ class OpenAIVisionEvaluator implements VisionEvaluator {
             confidence: 'LOW',
             severity: null,
             failureReason: null,
+            failureLocation: null,
             reworkInstruction: null
           });
         }
       }
     }
 
-    const verdict = deriveSessionVerdict(allCriteria);
+    const finalCriteria = deduplicateCriteria(allCriteria);
+    const verdict = deriveSessionVerdict(finalCriteria);
     return {
       verdict,
-      criteria: allCriteria,
-      reworkInstructions: buildReworkSummary(allCriteria),
+      criteria: finalCriteria,
+      reworkInstructions: buildReworkSummary(finalCriteria),
       promptVersion: payload.promptVersion,
       referenceSetVersion: payload.referenceSetVersion,
       provider: this.providerName,
@@ -357,6 +391,7 @@ class MockVisionEvaluator implements VisionEvaluator {
             confidence,
             severity: criterion.severityIfFailed,
             failureReason: `${criterion.label} deviates from the reference at ${angle.angleLabel}. Mock evaluation detected a discrepancy.`,
+            failureLocation: null,
             reworkInstruction: `Correct ${criterion.label.toLowerCase()} to match the reference images for the ${angle.angleLabel} angle, then resubmit.`
           });
         } else {
@@ -366,6 +401,7 @@ class MockVisionEvaluator implements VisionEvaluator {
             confidence,
             severity: null,
             failureReason: null,
+            failureLocation: null,
             reworkInstruction: null
           });
         }
