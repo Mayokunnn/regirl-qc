@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { IsArray, IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 import { PrismaService } from '../../common/prisma.service';
@@ -100,7 +100,7 @@ export class AdminController {
     @Body() body: UploadReferenceImageDto
   ) {
     const set = await this.prisma.referenceSet.findUnique({ where: { id: referenceSetId } });
-    if (!set) throw new Error('Reference set not found');
+    if (!set) throw new NotFoundException('Reference set not found');
 
     const buffer = Buffer.from(body.data, 'base64');
     const objectKey = `references/${referenceSetId}/${angleKey}/${Date.now()}.jpg`;
