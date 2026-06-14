@@ -263,20 +263,20 @@ async function main() {
   // Users
   const admin = await prisma.user.upsert({
     where: { email: 'admin@regirl.local' },
-    update: {},
+    update: { passwordHash: '$2a$10$YKRbe8ET9YqsE2K/uA0iQutjQi30QY/iG4cFb7MBEjQXOUs7H7htm' },
     create: {
       email: 'admin@regirl.local',
-      passwordHash: '$2b$10$teP6hJCYz9x2ztCQXxQ1f.18Jfq6Yq9Y4fPQLqR4xvym4Lx1VSjO.',
+      passwordHash: '$2a$10$YKRbe8ET9YqsE2K/uA0iQutjQi30QY/iG4cFb7MBEjQXOUs7H7htm',
       role: UserRole.admin
     }
   });
 
   await prisma.user.upsert({
     where: { email: 'supervisor@regirl.local' },
-    update: {},
+    update: { passwordHash: '$2a$10$YKRbe8ET9YqsE2K/uA0iQutjQi30QY/iG4cFb7MBEjQXOUs7H7htm' },
     create: {
       email: 'supervisor@regirl.local',
-      passwordHash: '$2b$10$teP6hJCYz9x2ztCQXxQ1f.18Jfq6Yq9Y4fPQLqR4xvym4Lx1VSjO.',
+      passwordHash: '$2a$10$YKRbe8ET9YqsE2K/uA0iQutjQi30QY/iG4cFb7MBEjQXOUs7H7htm',
       role: UserRole.supervisor
     }
   });
