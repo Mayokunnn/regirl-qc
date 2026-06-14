@@ -75,6 +75,7 @@ export interface EvaluationCriterionResult {
   /** null when verdict is PASS */
   severity: Severity | null;
   failureReason: string | null;
+  failureLocation: string | null;
   reworkInstruction: string | null;
 }
 
