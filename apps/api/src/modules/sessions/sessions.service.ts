@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { SessionStatus, Verdict } from '@regirl/db';
 import { getStorage } from '@regirl/storage';
@@ -7,6 +7,7 @@ import { QueueService } from '../../common/queue.service';
 
 @Injectable()
 export class SessionsService {
+  private readonly logger = new Logger(SessionsService.name);
   private readonly storage = getStorage();
 
   constructor(
@@ -121,23 +122,43 @@ export class SessionsService {
   }
 
   async uploadAngleFile(sessionId: string, angleKey: string, buffer: Buffer) {
+    this.logger.log(`uploadAngleFile called — sessionId=${sessionId} angleKey=${angleKey} bufferBytes=${buffer.length}`);
+
     const [session, angle] = await Promise.all([
       this.prisma.qcSession.findUnique({ where: { id: sessionId } }),
       this.prisma.captureAngle.findUnique({ where: { key: angleKey } })
     ]);
 
-    if (!session) throw new NotFoundException('Session not found');
-    if (!angle) throw new NotFoundException('Angle not found');
-    if (session.status !== SessionStatus.draft) throw new BadRequestException('Session is not in draft state');
+    if (!session) {
+      this.logger.warn(`uploadAngleFile — session not found: ${sessionId}`);
+      throw new NotFoundException('Session not found');
+    }
+    if (!angle) {
+      this.logger.warn(`uploadAngleFile — angle not found: ${angleKey}`);
+      throw new NotFoundException('Angle not found');
+    }
+    if (session.status !== SessionStatus.draft) {
+      this.logger.warn(`uploadAngleFile — session ${sessionId} status=${session.status}, expected draft`);
+      throw new BadRequestException('Session is not in draft state');
+    }
 
     const objectKey = `sessions/${sessionId}/${angleKey}/${randomUUID()}.jpg`;
-    await this.storage.putObject(objectKey, buffer);
+    this.logger.log(`uploadAngleFile — storing object at key=${objectKey}`);
+    try {
+      await this.storage.putObject(objectKey, buffer);
+    } catch (err) {
+      this.logger.error(`uploadAngleFile — storage.putObject FAILED for key=${objectKey}`, err instanceof Error ? err.stack : String(err));
+      throw err;
+    }
+    this.logger.log(`uploadAngleFile — storage write OK, upserting DB record`);
 
-    return this.prisma.sessionAngleUpload.upsert({
+    const record = await this.prisma.sessionAngleUpload.upsert({
       where: { sessionId_angleId: { sessionId, angleId: angle.id } },
       update: { objectKey, uploadedAt: new Date() },
       create: { sessionId, angleId: angle.id, objectKey, uploadedAt: new Date() }
     });
+    this.logger.log(`uploadAngleFile — SUCCESS uploadId=${record.id} sessionId=${sessionId} angleKey=${angleKey}`);
+    return record;
   }
 
   async confirmUpload(sessionId: string, angleKey: string, objectKey: string) {
@@ -230,6 +251,18 @@ export class SessionsService {
         helpful: payload.helpful,
         comment: payload.comment
       }
+    });
+  }
+
+  async rateCriterion(criterionResultId: string, rating: 'helpful' | 'not_helpful') {
+    const record = await this.prisma.sessionCriterionResult.findUnique({
+      where: { id: criterionResultId }
+    });
+    if (!record) throw new NotFoundException('Criterion result not found');
+
+    return this.prisma.sessionCriterionResult.update({
+      where: { id: criterionResultId },
+      data: { instructionRating: rating }
     });
   }
 }

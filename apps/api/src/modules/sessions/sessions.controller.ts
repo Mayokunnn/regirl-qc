@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -48,6 +49,12 @@ class SupervisorOverrideDto {
   @IsString()
   @IsNotEmpty()
   reason!: string;
+}
+
+class RateCriterionDto {
+  @IsString()
+  @IsNotEmpty()
+  rating!: string;
 }
 
 class ReworkFeedbackDto {
@@ -134,6 +141,17 @@ export class SessionsController {
       userId: req.user.userId,
       reason: body.reason
     });
+  }
+
+  @Post('criteria/:criterionResultId/rate')
+  rate(
+    @Param('criterionResultId') criterionResultId: string,
+    @Body() body: RateCriterionDto
+  ) {
+    if (body.rating !== 'helpful' && body.rating !== 'not_helpful') {
+      throw new BadRequestException('rating must be "helpful" or "not_helpful"');
+    }
+    return this.sessionsService.rateCriterion(criterionResultId, body.rating as 'helpful' | 'not_helpful');
   }
 
   @Post(':id/rework-feedback')
