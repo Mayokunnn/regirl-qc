@@ -34,12 +34,12 @@ async function resolveImageBase64(objectKey: string): Promise<string> {
   const url = await storage.createReadUrl(objectKey);
   if (url.startsWith('file://')) {
     const data = await readFile(url.replace('file://', ''));
-    return data.toString('base64');
+    return `data:image/jpeg;base64,${data.toString('base64')}`;
   }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch image ${objectKey}: ${res.status}`);
   const buf = await res.arrayBuffer();
-  return Buffer.from(buf).toString('base64');
+  return `data:image/jpeg;base64,${Buffer.from(buf).toString('base64')}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,8 +78,11 @@ function buildReworkSummary(criteria: EvaluationCriterionResult[]): string {
 const worker = new Worker(
   'session-evaluation',
   async (job: Job<{ sessionId: string }>) => {
+    const { sessionId } = job.data;
+    console.log(`[worker] job ${job.id} — evaluating sessionId=${sessionId}`);
+
     const session = await prisma.qcSession.findUnique({
-      where: { id: job.data.sessionId },
+      where: { id: sessionId },
       include: {
         sku: true,
         style: true,
@@ -90,7 +93,12 @@ const worker = new Worker(
       }
     });
 
-    if (!session) return;
+    if (!session) {
+      console.warn(`[worker] job ${job.id} — session ${sessionId} not found, skipping`);
+      return;
+    }
+
+    console.log(`[worker] session found — styleId=${session.styleId} skuId=${session.skuId} angleUploads=${session.angleUploads.length}`);
 
     await prisma.qcSession.update({
       where: { id: session.id },
@@ -105,15 +113,20 @@ const worker = new Worker(
     });
 
     if (!activeReference) {
+      console.error(`[worker] job ${job.id} — NO ACTIVE REFERENCE SET found for styleId=${session.styleId}. Cannot evaluate. Session marked failed.`);
       await prisma.qcSession.update({ where: { id: session.id }, data: { status: SessionStatus.failed } });
       return;
     }
+
+    console.log(`[worker] using referenceSet id=${activeReference.id} version=${activeReference.version} images=${activeReference.images.length}`);
 
     // All criteria with their angle associations
     const allCriteria = await prisma.criterion.findMany({
       include: { relevantAngles: true },
       orderBy: { sortOrder: 'asc' }
     });
+
+    console.log(`[worker] loaded ${allCriteria.length} criteria from DB`);
 
     // Build per-angle payloads (PRD §8.2)
     const anglePayloads: AnglePayload[] = [];
@@ -125,7 +138,12 @@ const worker = new Worker(
       const angleCriteria = allCriteria.filter((c) =>
         c.relevantAngles.some((ra) => ra.angleKey === angleKey)
       );
-      if (angleCriteria.length === 0) continue;
+      if (angleCriteria.length === 0) {
+        console.warn(`[worker] angle=${angleKey} has no relevant criteria — skipping`);
+        continue;
+      }
+
+      console.log(`[worker] angle=${angleKey} matched ${angleCriteria.length} criteria`);
 
       const criterionPayloads: CriterionPayload[] = angleCriteria.map((c) => ({
         key: c.key,
@@ -138,6 +156,7 @@ const worker = new Worker(
 
       // Reference images for this angle (with annotation notes)
       const refImages = activeReference.images.filter((img) => img.angleKey === angleKey);
+      console.log(`[worker] angle=${angleKey} has ${refImages.length} reference images`);
       const refImagesBase64: string[] = [];
       const refAnnotations: string[] = [];
 
@@ -145,8 +164,8 @@ const worker = new Worker(
         try {
           refImagesBase64.push(await resolveImageBase64(img.objectKey));
           refAnnotations.push(img.annotationNote ?? 'No annotation provided.');
-        } catch {
-          // Non-fatal: skip unavailable reference images
+        } catch (err) {
+          console.warn(`[worker] failed to load reference image for angle=${angleKey} key=${img.objectKey}:`, err instanceof Error ? err.message : err);
         }
       }
 
@@ -154,7 +173,9 @@ const worker = new Worker(
       let submissionBase64: string;
       try {
         submissionBase64 = await resolveImageBase64(upload.objectKey);
-      } catch {
+        console.log(`[worker] submission image loaded for angle=${angleKey}`);
+      } catch (err) {
+        console.error(`[worker] FAILED to load submission image for angle=${angleKey} key=${upload.objectKey}:`, err instanceof Error ? err.message : err);
         continue;
       }
 
@@ -170,9 +191,12 @@ const worker = new Worker(
     }
 
     if (anglePayloads.length === 0) {
+      console.error(`[worker] job ${job.id} — NO angle payloads built (uploaded angles had no matching criteria or images failed to load). Session marked failed.`);
       await prisma.qcSession.update({ where: { id: session.id }, data: { status: SessionStatus.failed } });
       return;
     }
+
+    console.log(`[worker] built ${anglePayloads.length} angle payloads — sending to AI evaluator`);
 
     const sessionPayload: SessionPayload = {
       sessionId: session.id,
@@ -188,12 +212,15 @@ const worker = new Worker(
 
     // Primary evaluation
     const primary = pickEvaluator();
+    console.log(`[worker] using primary evaluator: ${primary.providerName}`);
     let result = await primary.evaluateSession(sessionPayload);
+    console.log(`[worker] primary evaluation done — verdict=${result.verdict} criteria=${result.criteria.length} lowConfidence=${result.criteria.filter(c => c.confidence === 'LOW').length}`);
 
     // Fallback for LOW-confidence criteria (PRD §2: GPT-4o for low-confidence results)
     if (result.criteria.some((c) => c.confidence === 'LOW')) {
       const fallback = pickFallbackEvaluator(primary.providerName);
       if (fallback) {
+        console.log(`[worker] running fallback evaluator: ${fallback.providerName}`);
         try {
           const fallbackResult = await fallback.evaluateSession(sessionPayload);
 
@@ -213,13 +240,15 @@ const worker = new Worker(
             reworkInstructions: buildReworkSummary(mergedCriteria),
             fallbackUsed: true
           };
-        } catch {
-          // Keep primary result if fallback fails
+          console.log(`[worker] fallback merge done — final verdict=${result.verdict}`);
+        } catch (err) {
+          console.warn(`[worker] fallback evaluator failed, keeping primary result:`, err instanceof Error ? err.message : err);
         }
       }
     }
 
     const overallConfidence = averageConfidence(result.criteria);
+    console.log(`[worker] writing evaluation to DB — verdict=${result.verdict} confidence=${overallConfidence.toFixed(2)}`);
 
     const createdEvaluation = await prisma.sessionEvaluation.create({
       data: {
@@ -242,6 +271,7 @@ const worker = new Worker(
         confidence: confidenceToFloat(c.confidence),
         severity: toDbSeverity(c.severity),
         failureReason: c.failureReason,
+        failureLocation: c.failureLocation ?? null,
         reworkInstruction: c.reworkInstruction
       }))
     });
@@ -257,6 +287,7 @@ const worker = new Worker(
         referenceVersionUsed: result.referenceSetVersion
       }
     });
+    console.log(`[worker] job ${job.id} — session ${sessionId} completed with verdict=${result.verdict}`);
   },
   { connection, concurrency: env.WORKER_CONCURRENCY }
 );
