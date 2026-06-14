@@ -19,4 +19,13 @@ export class StylesController {
       orderBy: { code: 'asc' }
     });
   }
+
+  @Get(':id/angles')
+  async getAngles(@Param('id') styleId: string) {
+    return this.prisma.captureAngle.findMany({
+      where: { isRequired: true },
+      orderBy: { sortOrder: 'asc' },
+      select: { key: true, label: true, supervisorInstruction: true, sortOrder: true, isRequired: true }
+    });
+  }
 }
