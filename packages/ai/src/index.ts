@@ -131,13 +131,33 @@ For PROPORTIONAL and POSITIONAL evaluations: a vertical ruler is visible in both
 `
     : ''
 }
-The images provided are: first the reference images (${angle.referenceImagesBase64.length} images), then the submission image (1 image, last in the list).
+The images provided are: first the reference images (${angle.referenceImagesBase64.length} image${angle.referenceImagesBase64.length === 1 ? '' : 's'}), then the submission image (1 image, last in the list).
 
-Evaluate the submission image against each criterion listed below, comparing it to the reference images.
+HOW TO EVALUATE:
+Use the criteria AND the reference images together:
+- The criteria define what each feature should look like and what counts as a defect.
+- The reference images show you what a correctly finished, passing wig looks like in practice.
+
+For each criterion, look at the submission and ask two questions:
+1. Does it meet the criterion's acceptable standard?
+2. Does it look consistent with the reference images?
+
+If the submission meets the standard AND matches the reference — PASS.
+If it clearly fails the standard AND you can see a specific defect — FAIL.
+If the submission looks like the reference images, that is strong evidence it meets the standard — do not fail it without a specific visible reason.
+
+CRITICAL: The reference images define what "passing" looks like for this style. If the submission looks the same as or very similar to the reference image for a given criterion, the result MUST be PASS — even if you personally think the feature could be better. You are not grading against perfection; you are grading against the reference. Only FAIL when the submission is visibly worse than the reference on that specific criterion.
+
+CONFIDENCE RULES:
+- HIGH: the defect is unambiguously visible. You can name the exact location and describe exactly what you see that fails the criterion. Only use HIGH when you are certain.
+- MEDIUM: you can see a likely issue but lighting or angle limits certainty.
+- LOW: you cannot clearly assess this criterion from the image. Result must be PASS — do not fail what you cannot clearly see.
+- NEVER return FAIL with LOW confidence.
+- Do NOT claim HIGH confidence on a dark-fiber wig unless you can clearly see the defect despite the dark color.
 
 IMPORTANT:
 - Do NOT evaluate based on hair colour — colour variations are expected and intentional. Evaluate style, structure, and texture only.
-- If the image quality or lighting makes a criterion impossible to assess reliably, return LOW confidence for that criterion.
+- If a criterion cannot be assessed from this angle or image, return PASS with LOW confidence rather than guessing a FAIL.
 - Return ONLY a valid JSON array. No explanation, no markdown, no text outside the JSON.
 
 Criteria to evaluate:
@@ -148,7 +168,7 @@ For each criterion return a JSON object with exactly these fields:
   "criterion_key": string,
   "result": "PASS" | "FAIL",
   "confidence": "HIGH" | "MEDIUM" | "LOW",
-  "failure_reason": null | "plain-English description of the specific deviation observed",
+  "failure_reason": null | "plain-English description of the specific, observable deviation — must reference what you can see, not what you assume",
   "failure_location": null | "front" | "back" | "ends" | "lace" | "crown" | "left-side" | "right-side",
   "severity": null | "MAJOR" | "MINOR",
   "rework_instruction": null | "2-3 sentence plain-English instruction to the stylist describing exactly what to fix and how"
@@ -159,7 +179,8 @@ Rules:
 - failure_reason, failure_location and rework_instruction must be null when result is PASS
 - severity must match the criterion's severity_if_failed when result is FAIL
 - failure_location must identify where on the wig the issue was found when result is FAIL
-- rework_instruction must reference the specific capture angle (${angle.angleLabel})`;
+- rework_instruction must reference the specific capture angle (${angle.angleLabel})
+- NEVER return result "FAIL" with confidence "LOW" — if confidence is LOW, result must be "PASS"`;
 }
 
 // ---------------------------------------------------------------------------
