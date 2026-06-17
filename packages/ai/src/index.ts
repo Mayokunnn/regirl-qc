@@ -230,14 +230,17 @@ function parseAiResponse(raw: string): CriterionResponse[] {
 }
 
 function mapCriterionResponse(r: CriterionResponse): EvaluationCriterionResult {
+  // Enforce: LOW confidence must always be PASS regardless of what the model returned
+  const verdict = r.confidence === 'LOW' ? 'PASS' : r.result;
+  const isFail = verdict === 'FAIL';
   return {
     criterionKey: r.criterion_key,
-    verdict: r.result,
+    verdict,
     confidence: r.confidence,
-    severity: r.result === 'FAIL' ? ((r.severity?.toLowerCase() ?? 'minor') as Severity) : null,
-    failureReason: r.failure_reason,
-    failureLocation: r.failure_location ?? null,
-    reworkInstruction: r.rework_instruction
+    severity: isFail ? ((r.severity?.toLowerCase() ?? 'minor') as Severity) : null,
+    failureReason: isFail ? r.failure_reason : null,
+    failureLocation: isFail ? (r.failure_location ?? null) : null,
+    reworkInstruction: isFail ? r.rework_instruction : null
   };
 }
 
