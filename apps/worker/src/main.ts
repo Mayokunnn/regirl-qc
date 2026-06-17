@@ -26,8 +26,6 @@ const prisma = new PrismaClient();
 const storage = getStorage();
 const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
-console.log('[worker] BUILD MARKER: qc-fix-2026-06-17a (comparison prompt + LOW->PASS override)');
-
 // ---------------------------------------------------------------------------
 // Image helpers
 // ---------------------------------------------------------------------------
