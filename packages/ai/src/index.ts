@@ -354,6 +354,7 @@ class OpenAIVisionEvaluator implements VisionEvaluator {
       });
 
       const responseText = response.choices[0]?.message?.content ?? '[]';
+      console.log(`[ai/openai] angle=${angle.angleKey} refImages=${angle.referenceImagesBase64.length} rawResponse=${responseText.slice(0, 1200)}`);
 
       try {
         const parsed = parseAiResponse(responseText);

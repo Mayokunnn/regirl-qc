@@ -26,6 +26,8 @@ const prisma = new PrismaClient();
 const storage = getStorage();
 const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
+console.log('[worker] BUILD MARKER: qc-fix-2026-06-17a (comparison prompt + LOW->PASS override)');
+
 // ---------------------------------------------------------------------------
 // Image helpers
 // ---------------------------------------------------------------------------
@@ -47,9 +49,10 @@ async function resolveImageBase64(objectKey: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 function toDbVerdict(v: string): Verdict {
-  if (v === 'pass') return Verdict.pass;
-  if (v === 'fail') return Verdict.fail;
-  if (v === 'advisory') return Verdict.advisory;
+  const normalized = v?.toLowerCase();
+  if (normalized === 'pass') return Verdict.pass;
+  if (normalized === 'fail') return Verdict.fail;
+  if (normalized === 'advisory') return Verdict.advisory;
   return Verdict.needs_review;
 }
 
