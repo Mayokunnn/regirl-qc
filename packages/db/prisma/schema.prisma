@@ -172,9 +172,10 @@ model QcSession {
   style          Style                @relation(fields: [styleId], references: [id])
   sku            Sku                  @relation(fields: [skuId], references: [id])
   createdBy      User                 @relation(fields: [createdByUserId], references: [id])
-  angleUploads   SessionAngleUpload[]
-  evaluations    SessionEvaluation[]
-  reworkFeedback ReworkFeedback[]
+  angleUploads    SessionAngleUpload[]
+  evaluations     SessionEvaluation[]
+  reworkFeedback  ReworkFeedback[]
+  verdictFeedback VerdictFeedback[]
 }
 
 model SessionAngleUpload {
@@ -219,8 +220,17 @@ model SessionCriterionResult {
   reworkInstruction String?
   failureLocation   String?
   instructionRating String?
+  // Supervisor feedback on whether the AI's verdict was correct.
+  // verdictRating: 'correct' | 'wrong' (null = not yet rated).
+  // correctedVerdict: what the verdict should have been, when marked 'wrong'.
+  verdictRating        String?
+  correctedVerdict     Verdict?
+  verdictRatedByUserId String?
+  verdictRatedAt       DateTime?
 
   evaluation SessionEvaluation @relation(fields: [evaluationId], references: [id])
+
+  @@index([criterionKey, verdictRating])
 }
 
 model ReworkFeedback {
@@ -232,4 +242,19 @@ model ReworkFeedback {
   createdAt DateTime @default(now())
 
   session QcSession @relation(fields: [sessionId], references: [id])
+}
+
+// Supervisor's overall judgement on whether the AI's session verdict was correct.
+model VerdictFeedback {
+  id           String   @id @default(cuid())
+  sessionId    String
+  evaluationId String
+  userId       String
+  agreed       Boolean
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  session QcSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
 }

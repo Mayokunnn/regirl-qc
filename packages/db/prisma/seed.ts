@@ -40,7 +40,7 @@ Most Soft Siren color variants are dark (dark cherry or near-black). Dark hair a
 1. Shine patterns — how light bounces off the surface (reveals texture and shape).
 2. Clear edges — the line where hair ends and background begins (reveals silhouette and volume).
 3. Shadow depth — darker areas within the hair mass (reveals layers and body).
-If none of these clues are visible due to poor lighting or a dark backdrop, return LOW confidence. Inability to see something is not the same as it being acceptable.
+If none of these clues are visible due to poor lighting or a dark backdrop, return LOW confidence and PASS — you cannot fail what you cannot see. Do not invent defects from darkness.
 
 SHINE:
 The hair should have a soft, natural glow — not dull and not over-shiny.

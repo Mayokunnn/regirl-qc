@@ -114,6 +114,18 @@ function buildAnglePrompt(styleName: string, styleNuanceContext: string, angle: 
       ? angle.referenceAnnotationNotes.map((n, i) => `Reference image ${i + 1}: ${n}`).join('\n')
       : 'No ruler annotations provided — assess proportionally against reference images.';
 
+  // Few-shot learning: human corrections of past verdicts for these criteria.
+  const correctionEntries = angle.criteria
+    .filter((c) => c.correctionNotes)
+    .map((c) => `- ${c.label} (${c.key}): ${c.correctionNotes}`);
+  const correctionBlock =
+    correctionEntries.length > 0
+      ? `
+LEARNED FROM PAST HUMAN REVIEWS (apply these corrections — they come from supervisors who reviewed your previous verdicts on this exact style):
+${correctionEntries.join('\n')}
+`
+      : '';
+
   return `You are a quality control inspector for Regirl, a wig manufacturing brand.
 Your job is to compare a submitted wig photo to approved reference images and decide whether the submission matches the reference closely enough to pass — not whether the wig is perfect in absolute terms.
 
@@ -156,7 +168,7 @@ CONFIDENCE:
 IMPORTANT:
 - Do NOT evaluate based on hair colour — colour variations are expected and intentional.
 - Return ONLY a valid JSON array. No explanation, no markdown, no text outside the JSON.
-
+${correctionBlock}
 Criteria to evaluate:
 ${criteriaJson}
 

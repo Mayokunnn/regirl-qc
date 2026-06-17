@@ -66,6 +66,25 @@ class ReworkFeedbackDto {
   comment?: string;
 }
 
+class RateVerdictDto {
+  @IsString()
+  @IsNotEmpty()
+  rating!: string; // 'correct' | 'wrong'
+
+  @IsOptional()
+  @IsString()
+  correctedVerdict?: string; // 'pass' | 'fail' — required when rating === 'wrong'
+}
+
+class VerdictFeedbackDto {
+  @IsBoolean()
+  agreed!: boolean;
+
+  @IsOptional()
+  @IsString()
+  comment?: string;
+}
+
 @Controller('sessions')
 @UseGuards(AuthGuard('jwt'))
 export class SessionsController {
@@ -162,6 +181,40 @@ export class SessionsController {
   ) {
     return this.sessionsService.saveReworkFeedback(id, {
       helpful: body.helpful,
+      comment: body.comment,
+      userId: req.user.userId
+    });
+  }
+
+  /** Supervisor rates whether a single criterion's verdict was correct */
+  @Post('criteria/:criterionResultId/rate-verdict')
+  rateVerdict(
+    @Param('criterionResultId') criterionResultId: string,
+    @Body() body: RateVerdictDto,
+    @Req() req: { user: { userId: string } }
+  ) {
+    if (body.rating !== 'correct' && body.rating !== 'wrong') {
+      throw new BadRequestException('rating must be "correct" or "wrong"');
+    }
+    if (body.correctedVerdict && body.correctedVerdict !== 'pass' && body.correctedVerdict !== 'fail') {
+      throw new BadRequestException('correctedVerdict must be "pass" or "fail"');
+    }
+    return this.sessionsService.rateCriterionVerdict(criterionResultId, {
+      userId: req.user.userId,
+      rating: body.rating as 'correct' | 'wrong',
+      correctedVerdict: body.correctedVerdict as 'pass' | 'fail' | undefined
+    });
+  }
+
+  /** Supervisor's overall agree/disagree on the session verdict */
+  @Post(':id/verdict-feedback')
+  verdictFeedback(
+    @Param('id') id: string,
+    @Body() body: VerdictFeedbackDto,
+    @Req() req: { user: { userId: string } }
+  ) {
+    return this.sessionsService.saveVerdictFeedback(id, {
+      agreed: body.agreed,
       comment: body.comment,
       userId: req.user.userId
     });

@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSession } from '../context/SessionContext'
+import { saveVerdictFeedback } from '../api'
 import VerdictBadge from '../components/VerdictBadge'
 import CriterionCard from '../components/CriterionCard'
 import SessionSwitcher from '../components/SessionSwitcher'
@@ -109,6 +111,11 @@ export default function ResultsScreen() {
         </div>
       </div>
 
+      {/* Overall verdict feedback (optional) */}
+      <div className="px-5 pb-2">
+        <VerdictFeedbackBox sessionId={activeSession?.id} />
+      </div>
+
       {/* Start new session — does NOT reset existing sessions */}
       <div className="px-5 pt-2 pb-8">
         <button
@@ -119,6 +126,91 @@ export default function ResultsScreen() {
           Start New Session
         </button>
       </div>
+    </div>
+  )
+}
+
+function VerdictFeedbackBox({ sessionId }) {
+  const [submitted, setSubmitted] = useState(false)
+  const [showComment, setShowComment] = useState(false)
+  const [agreed, setAgreed] = useState(null)
+  const [comment, setComment] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  if (!sessionId) return null
+
+  async function submit(agreeValue, withComment) {
+    if (saving) return
+    setSaving(true)
+    try {
+      await saveVerdictFeedback(sessionId, agreeValue, withComment ? comment.trim() || undefined : undefined)
+      setSubmitted(true)
+    } catch (err) {
+      console.error('[verdict-feedback] failed', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (submitted) {
+    return (
+      <div
+        className="rounded-xl p-4 text-sm font-medium"
+        style={{ backgroundColor: WARM_CREAM, color: BRAND, opacity: 0.85 }}
+      >
+        Thanks — your feedback was recorded.
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="rounded-xl p-4"
+      style={{ backgroundColor: WARM_CREAM, color: BRAND, border: '1px solid rgba(59,15,13,0.18)' }}
+    >
+      <p className="text-sm font-semibold mb-3">Do you agree with this overall verdict?</p>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => submit(true, false)}
+          disabled={saving}
+          className="text-sm font-semibold px-3 py-1.5 rounded-full"
+          style={{ backgroundColor: 'rgba(22,163,74,0.12)', color: '#16a34a' }}
+        >
+          Agree
+        </button>
+        <button
+          onClick={() => {
+            setAgreed(false)
+            setShowComment(true)
+          }}
+          disabled={saving}
+          className="text-sm font-semibold px-3 py-1.5 rounded-full"
+          style={{ backgroundColor: 'rgba(220,38,38,0.12)', color: '#dc2626' }}
+        >
+          Disagree
+        </button>
+      </div>
+
+      {showComment && (
+        <div className="mt-3">
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="What was wrong? (optional)"
+            rows={2}
+            className="w-full text-sm rounded-lg p-2"
+            style={{ border: '1px solid rgba(59,15,13,0.2)', backgroundColor: '#fff', color: BRAND }}
+          />
+          <button
+            onClick={() => submit(agreed ?? false, true)}
+            disabled={saving}
+            className="mt-2 text-sm font-semibold px-3 py-1.5 rounded-full"
+            style={{ backgroundColor: BRAND, color: OFF_WHITE }}
+          >
+            Submit feedback
+          </button>
+        </div>
+      )}
     </div>
   )
 }

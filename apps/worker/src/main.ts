@@ -73,6 +73,64 @@ function buildReworkSummary(criteria: EvaluationCriterionResult[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Few-shot learning: turn human verdict corrections into per-criterion notes
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a map of criterionKey -> human-readable correction notes, derived from
+ * supervisor verdict ratings on past sessions for the same style. These notes
+ * are injected into the AI prompt so the model learns from its mistakes.
+ */
+async function buildCorrectionNotes(styleId: string): Promise<Map<string, string>> {
+  const corrections = await prisma.sessionCriterionResult.findMany({
+    where: {
+      verdictRating: 'wrong',
+      correctedVerdict: { not: null },
+      evaluation: { session: { styleId } }
+    },
+    select: { criterionKey: true, verdict: true, correctedVerdict: true, failureReason: true },
+    orderBy: { verdictRatedAt: 'desc' },
+    take: 300
+  });
+
+  const byKey = new Map<string, typeof corrections>();
+  for (const c of corrections) {
+    const list = byKey.get(c.criterionKey) ?? [];
+    list.push(c);
+    byKey.set(c.criterionKey, list);
+  }
+
+  const notes = new Map<string, string>();
+  for (const [key, list] of byKey) {
+    // AI said FAIL but the correct answer was PASS → over-failing (false positive)
+    const falseFails = list.filter((c) => c.verdict === 'fail' && c.correctedVerdict === 'pass');
+    // AI said PASS but the correct answer was FAIL → missed defect (false negative)
+    const missedFails = list.filter((c) => c.verdict === 'pass' && c.correctedVerdict === 'fail');
+
+    const lines: string[] = [];
+    if (falseFails.length > 0) {
+      const examples = falseFails
+        .map((c) => c.failureReason)
+        .filter((r): r is string => !!r)
+        .slice(0, 3)
+        .map((r) => `"${r}"`)
+        .join('; ');
+      lines.push(
+        `Supervisors overturned ${falseFails.length} FALSE FAIL(s) on this criterion — you flagged a defect that was not actually there. Do not repeat these incorrect reasons: ${examples || '(no reason recorded)'}. Only FAIL when the submission is clearly worse than the reference.`
+      );
+    }
+    if (missedFails.length > 0) {
+      lines.push(
+        `Supervisors caught ${missedFails.length} MISSED DEFECT(s) on this criterion — you passed something that should have failed. Look more carefully here.`
+      );
+    }
+    if (lines.length > 0) notes.set(key, lines.join(' '));
+  }
+
+  return notes;
+}
+
+// ---------------------------------------------------------------------------
 // Worker
 // ---------------------------------------------------------------------------
 
@@ -129,6 +187,13 @@ const worker = new Worker(
 
     console.log(`[worker] loaded ${allCriteria.length} criteria from DB`);
 
+    // Few-shot learning: gather human corrections of past verdicts for this style,
+    // grouped per criterion, to inject into the prompt.
+    const correctionNotesByCriterion = await buildCorrectionNotes(session.styleId);
+    if (correctionNotesByCriterion.size > 0) {
+      console.log(`[worker] loaded learned corrections for ${correctionNotesByCriterion.size} criteria`);
+    }
+
     // Build per-angle payloads (PRD §8.2)
     const anglePayloads: AnglePayload[] = [];
 
@@ -152,7 +217,8 @@ const worker = new Worker(
         description: c.description ?? '',
         acceptableStandard: c.acceptableStandard ?? '',
         severityIfFailed: (c.severityIfFailed ?? 'minor') as TypesSeverity,
-        evaluationType: (c.evaluationType ?? 'conformity') as EvaluationType
+        evaluationType: (c.evaluationType ?? 'conformity') as EvaluationType,
+        correctionNotes: correctionNotesByCriterion.get(c.key)
       }));
 
       // Reference images for this angle (with annotation notes)

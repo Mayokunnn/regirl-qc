@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { rateCriterionVerdict } from '../api'
+
 const BRAND = '#3B0F0D'
 const WARM_CREAM = '#FFF3DD'
 
@@ -13,9 +16,28 @@ const SEVERITY_COLORS = {
 }
 
 export default function CriterionCard({ criterion }) {
-  const { label, status, confidence, severity, failureReason, failureLocation, reworkInstructions, captureAngle } =
+  const { id, label, status, confidence, severity, failureReason, failureLocation, reworkInstructions, captureAngle } =
     criterion
   const isPassed = status === 'PASS'
+
+  const [verdictRating, setVerdictRating] = useState(criterion.verdictRating ?? null)
+  const [saving, setSaving] = useState(false)
+
+  async function rate(rating) {
+    if (saving) return
+    setSaving(true)
+    // A "wrong" verdict implies the opposite of what the AI returned.
+    const correctedVerdict = rating === 'wrong' ? (isPassed ? 'fail' : 'pass') : undefined
+    try {
+      await rateCriterionVerdict(id, rating, correctedVerdict)
+      setVerdictRating(rating)
+    } catch (err) {
+      // non-blocking — rating failure should not disrupt the user
+      console.error('[rate-verdict] failed', err)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div
@@ -99,6 +121,42 @@ export default function CriterionCard({ criterion }) {
           )}
         </div>
       )}
+
+      {/* Supervisor verdict-accuracy rating (optional) */}
+      <div
+        className="mt-3 pt-3 flex items-center gap-2"
+        style={{ borderTop: '1px solid rgba(59,15,13,0.12)' }}
+      >
+        {verdictRating ? (
+          <span className="text-xs font-medium" style={{ opacity: 0.7 }}>
+            {verdictRating === 'correct'
+              ? '✓ Marked accurate'
+              : `✗ Marked wrong — should be ${isPassed ? 'FAIL' : 'PASS'}`}
+          </span>
+        ) : (
+          <>
+            <span className="text-xs" style={{ opacity: 0.6 }}>
+              Was this verdict accurate?
+            </span>
+            <button
+              onClick={() => rate('correct')}
+              disabled={saving}
+              className="text-xs font-semibold px-2.5 py-1 rounded-full"
+              style={{ backgroundColor: 'rgba(22,163,74,0.12)', color: '#16a34a' }}
+            >
+              Yes
+            </button>
+            <button
+              onClick={() => rate('wrong')}
+              disabled={saving}
+              className="text-xs font-semibold px-2.5 py-1 rounded-full"
+              style={{ backgroundColor: 'rgba(220,38,38,0.12)', color: '#dc2626' }}
+            >
+              No
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }

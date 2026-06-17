@@ -124,6 +124,8 @@ export function mapSessionResult(session) {
       failureLocation: c.failureLocation ?? null,
       instructionRating: c.instructionRating ?? null,
       reworkInstructions: c.reworkInstruction ?? null,
+      verdictRating: c.verdictRating ?? null,
+      correctedVerdict: c.correctedVerdict ?? null,
       captureAngle: null,
     })),
   };
@@ -158,6 +160,20 @@ export async function uploadReferenceImage(referenceSetId, angleKey, base64Data,
 
 export async function rateCriterion(criterionResultId, rating) {
   return request('POST', `/sessions/criteria/${criterionResultId}/rate`, { rating });
+}
+
+// Supervisor rates whether the AI's verdict for a criterion was correct.
+// rating: 'correct' | 'wrong'. correctedVerdict ('pass'|'fail') required when 'wrong'.
+export async function rateCriterionVerdict(criterionResultId, rating, correctedVerdict) {
+  return request('POST', `/sessions/criteria/${criterionResultId}/rate-verdict`, {
+    rating,
+    correctedVerdict,
+  });
+}
+
+// Supervisor's overall agree/disagree on the session verdict.
+export async function saveVerdictFeedback(sessionId, agreed, comment) {
+  return request('POST', `/sessions/${sessionId}/verdict-feedback`, { agreed, comment });
 }
 
 export async function fetchSessionsForWig(wigId) {

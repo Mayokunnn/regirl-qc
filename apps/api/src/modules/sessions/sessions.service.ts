@@ -265,4 +265,60 @@ export class SessionsService {
       data: { instructionRating: rating }
     });
   }
+
+  /**
+   * Supervisor rates whether the AI's verdict for a single criterion was correct.
+   * When marked 'wrong', correctedVerdict records what it should have been — this
+   * feeds the few-shot learning loop in the worker.
+   */
+  async rateCriterionVerdict(
+    criterionResultId: string,
+    payload: { userId: string; rating: 'correct' | 'wrong'; correctedVerdict?: 'pass' | 'fail' }
+  ) {
+    const record = await this.prisma.sessionCriterionResult.findUnique({
+      where: { id: criterionResultId }
+    });
+    if (!record) throw new NotFoundException('Criterion result not found');
+
+    if (payload.rating === 'wrong' && !payload.correctedVerdict) {
+      throw new BadRequestException('correctedVerdict is required when rating a verdict as "wrong"');
+    }
+
+    return this.prisma.sessionCriterionResult.update({
+      where: { id: criterionResultId },
+      data: {
+        verdictRating: payload.rating,
+        correctedVerdict:
+          payload.rating === 'wrong' && payload.correctedVerdict
+            ? (payload.correctedVerdict as Verdict)
+            : null,
+        verdictRatedByUserId: payload.userId,
+        verdictRatedAt: new Date()
+      }
+    });
+  }
+
+  /** Supervisor's overall agree/disagree on a session's verdict, with optional comment. */
+  async saveVerdictFeedback(
+    sessionId: string,
+    payload: { userId: string; agreed: boolean; comment?: string }
+  ) {
+    const session = await this.prisma.qcSession.findUnique({
+      where: { id: sessionId },
+      include: { evaluations: { orderBy: { createdAt: 'desc' }, take: 1 } }
+    });
+    if (!session) throw new NotFoundException('Session not found');
+    const evaluation = session.evaluations[0];
+    if (!evaluation) throw new BadRequestException('Session has no evaluation to rate');
+
+    return this.prisma.verdictFeedback.create({
+      data: {
+        sessionId,
+        evaluationId: evaluation.id,
+        userId: payload.userId,
+        agreed: payload.agreed,
+        comment: payload.comment
+      }
+    });
+  }
 }

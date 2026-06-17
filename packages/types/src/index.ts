@@ -39,6 +39,12 @@ export interface CriterionPayload {
   acceptableStandard: string;
   severityIfFailed: Severity;
   evaluationType: EvaluationType;
+  /**
+   * Few-shot learning: human-reviewed corrections of past AI verdicts for this
+   * criterion on this style. Injected into the prompt so the model avoids
+   * repeating mistakes. Undefined/empty when there is no correction history.
+   */
+  correctionNotes?: string;
 }
 
 export interface AnglePayload {
