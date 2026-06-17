@@ -222,8 +222,22 @@ function parseAiResponse(raw: string): CriterionResponse[] {
     .replace(/\s*```\s*$/im, '')
     .trim();
   const parsed = JSON.parse(cleaned);
-  if (!Array.isArray(parsed)) throw new Error('AI response is not an array');
-  return parsed.map((item) => CriterionResponseSchema.parse(item));
+  // Accept a single object as well as an array — the model occasionally returns one object.
+  const items = Array.isArray(parsed) ? parsed : [parsed];
+  // Parse each item independently so one malformed criterion does not discard
+  // the whole angle's evaluation. Invalid items are skipped and logged.
+  const results: CriterionResponse[] = [];
+  for (const item of items) {
+    const parsedItem = CriterionResponseSchema.safeParse(item);
+    if (parsedItem.success) {
+      results.push(parsedItem.data);
+    } else {
+      console.warn(
+        `[ai] skipping malformed criterion response: ${JSON.stringify(item)?.slice(0, 200)}`
+      );
+    }
+  }
+  return results;
 }
 
 function mapCriterionResponse(r: CriterionResponse): EvaluationCriterionResult {
@@ -345,6 +359,7 @@ class OpenAIVisionEvaluator implements VisionEvaluator {
       const response = await this.client.chat.completions.create({
         model: this.model,
         max_tokens: 2048,
+        temperature: 0,
         messages: [
           {
             role: 'user',
