@@ -201,22 +201,9 @@ CONFIDENCE:
 - LOW: you cannot clearly assess this criterion. This routes the wig to a human reviewer — it is the correct response to bad lighting, blur, framing, or a missing view. When your confidence is LOW, set result to PASS so the system flags the session for human review; do NOT use FAIL to express uncertainty. NEVER return FAIL with LOW confidence — a FAIL means you can actually see the deviation.
 - Dark fibers (dark wigs) absorb light and hide detail. On dark fiber, judge using sheen patterns, clear silhouette edges, and shadow depth. If those clues are not visible enough to judge, return LOW confidence rather than guessing — do NOT default to PASS.
 
-ANGLE-MATCH CHECK (REQUIRED FIRST ELEMENT OF YOUR OUTPUT):
-Before the criteria, decide whether the submission photo actually shows the expected "${angle.angleKey} — ${angle.angleLabel}" view of this wig. The expected view is described by the capture angle above. A photo taken from a different angle (e.g. a full front shot placed where a close-up of the lace or the ends belongs, or a side view where the back belongs) is a MISMATCH even if it shows a wig. Output this as the FIRST object in the array:
-{
-  "criterion_key": "${ANGLE_MATCH_KEY}",
-  "result": "PASS" if the photo genuinely shows the ${angle.angleLabel} view, otherwise "FAIL",
-  "confidence": "HIGH" | "MEDIUM" | "LOW",
-  "failure_reason": null when PASS; when FAIL, state what the photo actually shows instead,
-  "failure_location": null,
-  "severity": null,
-  "rework_instruction": null
-}
-Only mark this PASS when you are confident the photo is the correct angle. If it is clearly the wrong shot, mark FAIL with HIGH or MEDIUM confidence.
-
 IMPORTANT:
 - Do NOT evaluate based on hair colour — colour variations are expected and intentional.
-- Return ONLY a valid JSON array (the angle-match object first, then one object per criterion). No explanation, no markdown, no text outside the JSON.
+- Return ONLY a valid JSON array, one object per criterion. No explanation, no markdown, no text outside the JSON.
 ${correctionBlock}${strictnessBlock}
 Criteria to evaluate:
 ${criteriaJson}
@@ -316,57 +303,6 @@ function mapCriterionResponse(r: CriterionResponse): EvaluationCriterionResult {
   };
 }
 
-const ANGLE_MATCH_KEY = '__angle_match__';
-
-/**
- * Converts a parsed angle response into criterion results, applying the
- * angle-match gate. The model returns a `__angle_match__` sentinel saying whether
- * the submitted photo actually shows the expected capture angle. When it does
- * not, we discard that angle's criterion scores (they would be meaningless) by
- * marking them LOW confidence, and surface a single "Photo Validation" FAIL with
- * MINOR severity — so the session routes to NEEDS_REVIEW (re-shoot) rather than
- * emitting a misleading PASS/FAIL from the wrong photo.
- */
-function applyAngleMatch(
-  parsed: CriterionResponse[],
-  angle: AnglePayload
-): EvaluationCriterionResult[] {
-  const sentinel = parsed.find((p) => p.criterion_key === ANGLE_MATCH_KEY);
-  const realResponses = parsed.filter((p) => p.criterion_key !== ANGLE_MATCH_KEY);
-
-  const angleMismatch = !!sentinel && sentinel.result === 'FAIL' && sentinel.confidence !== 'LOW';
-  if (!angleMismatch) {
-    return realResponses.map(mapCriterionResponse);
-  }
-
-  const detail = sentinel?.failure_reason ? `: ${sentinel.failure_reason}` : '';
-  const message = `The photo in the ${angle.angleLabel} slot does not appear to show the expected ${angle.angleLabel} view${detail}. Re-shoot this angle and resubmit.`;
-
-  // Mark this angle's real criteria as unusable (LOW) so they don't yield a
-  // false verdict; another valid angle may still cover the same criterion.
-  const unusable: EvaluationCriterionResult[] = angle.criteria.map((c) => ({
-    criterionKey: c.key,
-    verdict: 'PASS',
-    confidence: 'LOW',
-    severity: null,
-    failureReason: null,
-    failureLocation: null,
-    reworkInstruction: null
-  }));
-
-  unusable.push({
-    criterionKey: 'photo-validation',
-    verdict: 'FAIL',
-    confidence: sentinel?.confidence ?? 'HIGH',
-    severity: 'minor' as Severity,
-    failureReason: message,
-    failureLocation: null,
-    reworkInstruction: message
-  });
-
-  return unusable;
-}
-
 // ---------------------------------------------------------------------------
 // Dedicated photo validation (is this a wig, and which angle?)
 // ---------------------------------------------------------------------------
@@ -391,12 +327,24 @@ const ANGLE_LABELS: Record<string, string> = {
   CLOSEUP_ENDS: 'close-up ends'
 };
 
-// Left and right profiles are mirror images the model cannot reliably tell apart,
-// so they are treated as interchangeable. Everything else must match exactly.
+// Some viewpoints genuinely overlap and the model cannot tell them apart, so we
+// only treat a photo as the "wrong angle" when it falls in a clearly different
+// group. Within a group, any photo is accepted:
+//   - crown/parting from above: TOP_DOWN and CLOSEUP_LACE look the same
+//   - body/length from the front or sides: FRONT, both PROFILES, and CLOSEUP_ENDS
+//     all show hair length/ends and are easily confused
+//   - the back is distinct
+// This still catches gross errors (a back shot in a front slot, a top-down in a
+// back slot) without false-positiving on legitimate close-ups.
+const ANGLE_GROUPS: string[][] = [
+  ['TOP_DOWN', 'CLOSEUP_LACE'],
+  ['FRONT_FULL', 'LEFT_PROFILE', 'RIGHT_PROFILE', 'CLOSEUP_ENDS'],
+  ['BACK_FULL']
+];
+
 function anglesCompatible(detected: string, expected: string): boolean {
   if (detected === expected) return true;
-  const profiles = new Set(['LEFT_PROFILE', 'RIGHT_PROFILE']);
-  return profiles.has(detected) && profiles.has(expected);
+  return ANGLE_GROUPS.some((g) => g.includes(detected) && g.includes(expected));
 }
 
 export const PHOTO_CLASSIFIER_PROMPT = `You are validating a single photo submitted for wig quality control. Look ONLY at this one image and report what it actually is. Do NOT assume it is a wig.
@@ -510,7 +458,7 @@ class GeminiVisionEvaluator implements VisionEvaluator {
 
       try {
         const parsed = parseAiResponse(responseText);
-        allCriteria.push(...applyAngleMatch(parsed, angle));
+        allCriteria.push(...parsed.map(mapCriterionResponse));
       } catch {
         // If parsing fails for an angle, mark all its criteria as LOW confidence PASS
         for (const c of angle.criteria) {
@@ -611,7 +559,7 @@ class OpenAIVisionEvaluator implements VisionEvaluator {
 
       try {
         const parsed = parseAiResponse(responseText);
-        allCriteria.push(...applyAngleMatch(parsed, angle));
+        allCriteria.push(...parsed.map(mapCriterionResponse));
       } catch {
         for (const c of angle.criteria) {
           allCriteria.push({
