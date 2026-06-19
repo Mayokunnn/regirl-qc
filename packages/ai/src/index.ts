@@ -19,9 +19,24 @@ import { seededFloat } from '@regirl/utils';
 // Shared types
 // ---------------------------------------------------------------------------
 
+export interface PhotoClassification {
+  isWigPhoto: boolean;
+  detectedAngle: string; // one of KNOWN_ANGLE_KEYS or 'UNKNOWN'
+  description: string;
+}
+
+export interface PhotoIssue {
+  angleKey: string;
+  angleLabel: string;
+  problem: string;
+}
+
 export interface VisionEvaluator {
   readonly providerName: string;
   evaluateSession(payload: SessionPayload): Promise<SessionEvaluationResult>;
+  // Focused, single-image check: is this a wig and which angle? Optional so the
+  // mock evaluator can skip it.
+  classifyPhoto?(imageBase64: string): Promise<PhotoClassification>;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +368,104 @@ function applyAngleMatch(
 }
 
 // ---------------------------------------------------------------------------
+// Dedicated photo validation (is this a wig, and which angle?)
+// ---------------------------------------------------------------------------
+
+const KNOWN_ANGLE_KEYS = [
+  'FRONT_FULL',
+  'LEFT_PROFILE',
+  'RIGHT_PROFILE',
+  'BACK_FULL',
+  'TOP_DOWN',
+  'CLOSEUP_LACE',
+  'CLOSEUP_ENDS'
+] as const;
+
+const ANGLE_LABELS: Record<string, string> = {
+  FRONT_FULL: 'front',
+  LEFT_PROFILE: 'left profile',
+  RIGHT_PROFILE: 'right profile',
+  BACK_FULL: 'back',
+  TOP_DOWN: 'top-down',
+  CLOSEUP_LACE: 'close-up lace',
+  CLOSEUP_ENDS: 'close-up ends'
+};
+
+// Left and right profiles are mirror images the model cannot reliably tell apart,
+// so they are treated as interchangeable. Everything else must match exactly.
+function anglesCompatible(detected: string, expected: string): boolean {
+  if (detected === expected) return true;
+  const profiles = new Set(['LEFT_PROFILE', 'RIGHT_PROFILE']);
+  return profiles.has(detected) && profiles.has(expected);
+}
+
+export const PHOTO_CLASSIFIER_PROMPT = `You are validating a single photo submitted for wig quality control. Look ONLY at this one image and report what it actually is. Do NOT assume it is a wig.
+
+Return ONLY strict JSON, no markdown:
+{
+  "is_wig_photo": boolean,  // true ONLY if the image clearly shows a hair wig (on a mannequin head, a stand, or held up). false for documents, QR codes, screenshots, invitations, photos of people's faces, random objects, or blank/unclear images.
+  "detected_angle": "FRONT_FULL" | "LEFT_PROFILE" | "RIGHT_PROFILE" | "BACK_FULL" | "TOP_DOWN" | "CLOSEUP_LACE" | "CLOSEUP_ENDS" | "UNKNOWN",  // which wig viewpoint this photo best matches; UNKNOWN if not a wig or unclear
+  "description": "a few words describing what the image actually shows"
+}`;
+
+const PhotoClassificationSchema = z.object({
+  is_wig_photo: z.boolean(),
+  detected_angle: z.string(),
+  description: z.string().nullable()
+});
+
+function parsePhotoClassification(raw: string): PhotoClassification {
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/im, '')
+    .replace(/\s*```\s*$/im, '')
+    .trim();
+  const parsed = PhotoClassificationSchema.parse(JSON.parse(cleaned));
+  const detected = parsed.detected_angle?.toUpperCase();
+  return {
+    isWigPhoto: parsed.is_wig_photo,
+    detectedAngle: (KNOWN_ANGLE_KEYS as readonly string[]).includes(detected) ? detected : 'UNKNOWN',
+    description: parsed.description ?? ''
+  };
+}
+
+/**
+ * Runs the dedicated photo-validation pass over every submitted angle using the
+ * configured provider. Returns one issue per photo that is not a wig, or that
+ * clearly shows the wrong capture angle. Returns [] when the provider cannot
+ * classify (e.g. mock) so evaluation proceeds normally.
+ */
+export async function validatePhotos(angles: AnglePayload[]): Promise<PhotoIssue[]> {
+  const evaluator = pickEvaluator();
+  if (!evaluator.classifyPhoto) return [];
+
+  const issues: PhotoIssue[] = [];
+  for (const angle of angles) {
+    let cls: PhotoClassification;
+    try {
+      cls = await evaluator.classifyPhoto(angle.submissionImageBase64);
+    } catch (err) {
+      console.warn(`[ai] photo classification failed for ${angle.angleKey}:`, err instanceof Error ? err.message : err);
+      continue; // don't block evaluation on a classifier hiccup
+    }
+
+    if (!cls.isWigPhoto) {
+      issues.push({
+        angleKey: angle.angleKey,
+        angleLabel: angle.angleLabel,
+        problem: `not a wig photo${cls.description ? ` (looks like: ${cls.description})` : ''}`
+      });
+    } else if (cls.detectedAngle !== 'UNKNOWN' && !anglesCompatible(cls.detectedAngle, angle.angleKey)) {
+      issues.push({
+        angleKey: angle.angleKey,
+        angleLabel: angle.angleLabel,
+        problem: `looks like a ${ANGLE_LABELS[cls.detectedAngle] ?? cls.detectedAngle} shot, not ${angle.angleLabel}`
+      });
+    }
+  }
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
 // Gemini evaluator
 // ---------------------------------------------------------------------------
 
@@ -364,6 +477,16 @@ class GeminiVisionEvaluator implements VisionEvaluator {
   constructor(apiKey: string) {
     this.client = new GoogleGenerativeAI(apiKey);
     this.model = 'gemini-2.0-flash';
+  }
+
+  async classifyPhoto(imageBase64: string): Promise<PhotoClassification> {
+    const model = this.client.getGenerativeModel({ model: this.model });
+    const data = await fetchImageBase64(imageBase64);
+    const result = await model.generateContent([
+      PHOTO_CLASSIFIER_PROMPT,
+      { inlineData: { data, mimeType: 'image/jpeg' } }
+    ]);
+    return parsePhotoClassification(result.response.text());
   }
 
   async evaluateSession(payload: SessionPayload): Promise<SessionEvaluationResult> {
@@ -430,6 +553,25 @@ class OpenAIVisionEvaluator implements VisionEvaluator {
   constructor(apiKey: string) {
     this.client = new OpenAI({ apiKey });
     this.model = 'gpt-4o';
+  }
+
+  async classifyPhoto(imageBase64: string): Promise<PhotoClassification> {
+    const data = await fetchImageBase64(imageBase64);
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      max_tokens: 300,
+      temperature: 0,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: PHOTO_CLASSIFIER_PROMPT },
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${data}`, detail: 'low' } }
+          ]
+        }
+      ]
+    });
+    return parsePhotoClassification(response.choices[0]?.message?.content ?? '{}');
   }
 
   async evaluateSession(payload: SessionPayload): Promise<SessionEvaluationResult> {

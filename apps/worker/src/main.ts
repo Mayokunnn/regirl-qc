@@ -8,7 +8,8 @@ import {
   confidenceToFloat,
   deriveSessionVerdict,
   pickEvaluator,
-  pickFallbackEvaluator
+  pickFallbackEvaluator,
+  validatePhotos
 } from '@regirl/ai';
 import { getEnv } from '@regirl/config';
 import { PrismaClient, SessionStatus, Verdict, Severity } from '@regirl/db';
@@ -382,6 +383,20 @@ const worker = new Worker(
         session.id,
         activeReference.version,
         `The same photo was uploaded for multiple angles (${duplicateAngles.join(', ')}). Each capture angle needs its own distinct photo. Re-shoot each angle and resubmit.`
+      );
+      return;
+    }
+
+    // Guard: dedicated photo-validation pass — reject photos that are not a wig
+    // or clearly show the wrong capture angle, before spending a full evaluation.
+    const photoIssues = await validatePhotos(anglePayloads);
+    if (photoIssues.length > 0) {
+      const summary = photoIssues.map((i) => `${i.angleLabel}: ${i.problem}`).join('; ');
+      console.warn(`[worker] job ${job.id} — photo validation failed: ${summary}. Rejecting.`);
+      await writeInvalidSubmission(
+        session.id,
+        activeReference.version,
+        `Some photos are not valid for their slot — ${summary}. Re-shoot the affected angles with the correct photo and resubmit.`
       );
       return;
     }
