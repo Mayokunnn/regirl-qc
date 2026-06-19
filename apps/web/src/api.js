@@ -14,6 +14,7 @@ const CRITERION_LABELS = {
   'frizz-flyaways': 'Frizz and Flyaways',
   'weft-track-visibility': 'Weft/Track Visibility',
   'back-hemline-evenness': 'Back Hemline Evenness',
+  'photo-validation': 'Photo Validation',
 };
 
 function getToken() {

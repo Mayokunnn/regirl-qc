@@ -91,7 +91,12 @@ function averageConfidence(criteria: EvaluationCriterionResult[]): number {
 // Prompt builder (PRD §8.3)
 // ---------------------------------------------------------------------------
 
-function buildAnglePrompt(styleName: string, styleNuanceContext: string, angle: AnglePayload): string {
+function buildAnglePrompt(
+  styleName: string,
+  styleNuanceContext: string,
+  angle: AnglePayload,
+  styleStrictnessNote = ''
+): string {
   const hasProportionalOrPositional = angle.criteria.some(
     (c) => c.evaluationType === EvaluationType.PROPORTIONAL || c.evaluationType === EvaluationType.POSITIONAL
   );
@@ -126,6 +131,13 @@ ${correctionEntries.join('\n')}
 `
       : '';
 
+  const strictnessBlock = styleStrictnessNote
+    ? `
+CALIBRATION FROM SUPERVISORS (overall feedback on your past verdicts for this style — adjust your overall strictness accordingly):
+${styleStrictnessNote}
+`
+    : '';
+
   return `You are a quality control inspector for Regirl, a wig manufacturing brand.
 Your job is to compare a submitted wig photo to approved reference images and decide whether the submission matches the reference closely enough to pass — not whether the wig is perfect in absolute terms.
 
@@ -146,29 +158,38 @@ For PROPORTIONAL and POSITIONAL evaluations: a vertical ruler is visible in both
 }
 IMAGES: You are given ${angle.referenceImagesBase64.length} reference image${angle.referenceImagesBase64.length === 1 ? '' : 's'} followed by 1 submission image (the last image).
 
-YOUR TASK — COMPARISON, NOT PERFECTION:
-The reference images are approved passing examples. A submission PASSES when it looks like the reference on a given criterion. A submission FAILS only when it is visibly and clearly worse than the reference on that specific criterion.
+YOUR TASK — STRICT CONFORMITY TO THE REFERENCE STANDARD:
+This is a rule-enforced visual conformity check, not a lenient pass-through. Every wig that ships must be visually indistinguishable from the approved reference for this style. Enforce the standard mechanically and remove tolerance creep — do NOT give the submission the benefit of the doubt.
 
-Do NOT apply your own standard of quality. Do NOT fail something because it could theoretically be better. The question for every criterion is: "Does the submission look like the reference on this?"
+THE GOLDEN RULE: every criterion is judged on its own. A good result on one criterion NEVER compensates for a deviation on another. If a criterion deviates from its acceptable standard, mark THAT criterion FAIL — regardless of how good everything else looks.
+
+Each criterion below has an "acceptable_standard". A criterion PASSES only when the submission clearly meets that standard and matches the reference. If you can see the submission deviate from the standard, it FAILS. Judge against the reference standard, not against absolute perfection — but a real, visible deviation from the standard is a FAIL, not a PASS.
+
+SEVERITY — do not decide the overall wig verdict; that is computed downstream from your per-criterion results. Your job is only to assign each criterion's result and its severity. When a criterion FAILS, its "severity" MUST equal that criterion's "severity_if_failed" exactly — never downgrade a MAJOR criterion to MINOR or upgrade a MINOR one. A MAJOR fail will fail the whole wig; a MINOR-only fail is advisory and may be overridden by a supervisor — so assign severity faithfully and do not soften a real MAJOR deviation just because it seems small.
+
+GATING — CHECK THIS FIRST, BEFORE SCORING ANY CRITERION (never pass by default):
+Confirm the submission is actually the correct, assessable photo for this capture angle (${angle.angleKey} — ${angle.angleLabel}):
+- If the submission does NOT show this wig at the expected capture angle, shows the wrong view, shows something that is not this wig, or is framed so the region a criterion needs is not shown → you CANNOT confirm conformity. Do NOT return PASS. Return FAIL for criteria that plainly cannot be satisfied by this image (it is not the required shot), with a failure_reason that says exactly what is wrong with the photo.
+- If the submission is simply too blurry, too dark, or too poorly lit to see the detail a criterion needs → return LOW confidence for that criterion (a human will review it). Not being able to see something is NOT the same as it being acceptable.
 
 Step-by-step for each criterion:
-1. Look at the reference image(s) for this criterion.
-2. Look at the submission image for the same criterion.
-3. Ask: Is there a clear, visible difference between them that makes the submission worse?
-   - YES and you can describe exactly what you see → FAIL (HIGH or MEDIUM confidence)
-   - NO or you cannot clearly see a difference → PASS
+1. Read the criterion's acceptable_standard and look at the reference image(s).
+2. Look at the submission image for the same region.
+3. Decide:
+   - Submission clearly meets the standard and matches the reference → PASS (HIGH or MEDIUM confidence).
+   - You can see a deviation from the standard, or the gating check above failed for this criterion → FAIL (HIGH or MEDIUM confidence). Describe exactly what you see and where.
+   - You genuinely cannot see the detail well enough to judge (blur, darkness, framing) → LOW confidence.
 
 CONFIDENCE:
-- HIGH: you can point to a specific, unambiguous defect visible in the submission that is absent in the reference. State exactly what and where.
-- MEDIUM: you see a likely issue but lighting or angle limits certainty.
-- LOW: you cannot clearly assess this criterion from these images. Result MUST be PASS.
-- NEVER return FAIL with LOW confidence — if you cannot clearly see it, it is not a defect.
-- Dark fibers (dark wigs) absorb light and hide detail. Do not claim HIGH confidence on dark-fiber wigs unless the defect is unmistakably visible despite the color.
+- HIGH: you can clearly see the relevant area and judge it with certainty — whether PASS or FAIL.
+- MEDIUM: you can see it but lighting or angle limits certainty.
+- LOW: you cannot clearly assess this criterion. This routes the wig to a human reviewer — it is the correct response to bad lighting, blur, framing, or a missing view. When your confidence is LOW, set result to PASS so the system flags the session for human review; do NOT use FAIL to express uncertainty. NEVER return FAIL with LOW confidence — a FAIL means you can actually see the deviation.
+- Dark fibers (dark wigs) absorb light and hide detail. On dark fiber, judge using sheen patterns, clear silhouette edges, and shadow depth. If those clues are not visible enough to judge, return LOW confidence rather than guessing — do NOT default to PASS.
 
 IMPORTANT:
 - Do NOT evaluate based on hair colour — colour variations are expected and intentional.
 - Return ONLY a valid JSON array. No explanation, no markdown, no text outside the JSON.
-${correctionBlock}
+${correctionBlock}${strictnessBlock}
 Criteria to evaluate:
 ${criteriaJson}
 
@@ -286,7 +307,7 @@ class GeminiVisionEvaluator implements VisionEvaluator {
     const allCriteria: EvaluationCriterionResult[] = [];
 
     for (const angle of payload.angles) {
-      const prompt = buildAnglePrompt(payload.styleName, payload.styleNuanceContext, angle);
+      const prompt = buildAnglePrompt(payload.styleName, payload.styleNuanceContext, angle, payload.styleStrictnessNote);
 
       // Build parts: reference images first, then submission image
       const imageParts: Part[] = [];
@@ -351,7 +372,7 @@ class OpenAIVisionEvaluator implements VisionEvaluator {
     const allCriteria: EvaluationCriterionResult[] = [];
 
     for (const angle of payload.angles) {
-      const prompt = buildAnglePrompt(payload.styleName, payload.styleNuanceContext, angle);
+      const prompt = buildAnglePrompt(payload.styleName, payload.styleNuanceContext, angle, payload.styleStrictnessNote);
 
       const imageContent: OpenAI.Chat.ChatCompletionContentPart[] = [];
 

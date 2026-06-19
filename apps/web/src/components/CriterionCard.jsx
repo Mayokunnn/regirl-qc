@@ -15,7 +15,7 @@ const SEVERITY_COLORS = {
   MINOR: '#d97706',
 }
 
-export default function CriterionCard({ criterion }) {
+export default function CriterionCard({ criterion, onRated }) {
   const { id, label, status, confidence, severity, failureReason, failureLocation, reworkInstructions, captureAngle } =
     criterion
   const isPassed = status === 'PASS'
@@ -31,6 +31,8 @@ export default function CriterionCard({ criterion }) {
     try {
       await rateCriterionVerdict(id, rating, correctedVerdict)
       setVerdictRating(rating)
+      // Push the rating up so it survives this card remounting (tab switch / reload).
+      onRated?.(id, { verdictRating: rating, correctedVerdict: correctedVerdict ?? null })
     } catch (err) {
       // non-blocking — rating failure should not disrupt the user
       console.error('[rate-verdict] failed', err)
