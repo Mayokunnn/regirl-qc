@@ -2,7 +2,6 @@ import { useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSession } from '../context/SessionContext'
 import { uploadAngleFile, submitSession, fetchAngles } from '../api'
-import SessionSwitcher from '../components/SessionSwitcher'
 
 const BRAND = '#3B0F0D'
 const OFF_WHITE = '#FFFCF2'
@@ -163,6 +162,8 @@ export default function PhotoUploadScreen() {
       await submitSession(activeSession.apiSessionId)
       setActiveSessionStatus('processing')
       setSubmitted(true)
+      // Evaluation runs in the background (SessionContext polls); land on History.
+      navigate('/history')
     } catch (err) {
       setSubmitError(err.message ?? 'Submission failed. Please try again.')
     } finally {
@@ -177,8 +178,6 @@ export default function PhotoUploadScreen() {
         <h1 className="text-2xl font-bold leading-tight">Upload Photos</h1>
         <p className="text-sm mt-1" style={{ opacity: 0.65 }}>{activeSession.skuLabel}</p>
       </div>
-
-      <SessionSwitcher />
 
       <div className="px-5 mb-5">
         <div className="flex items-center justify-between mb-1.5">

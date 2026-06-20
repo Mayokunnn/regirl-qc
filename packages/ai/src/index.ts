@@ -19,9 +19,24 @@ import { seededFloat } from '@regirl/utils';
 // Shared types
 // ---------------------------------------------------------------------------
 
+export interface PhotoClassification {
+  isWigPhoto: boolean;
+  detectedAngle: string; // one of KNOWN_ANGLE_KEYS or 'UNKNOWN'
+  description: string;
+}
+
+export interface PhotoIssue {
+  angleKey: string;
+  angleLabel: string;
+  problem: string;
+}
+
 export interface VisionEvaluator {
   readonly providerName: string;
   evaluateSession(payload: SessionPayload): Promise<SessionEvaluationResult>;
+  // Focused, single-image check: is this a wig and which angle? Optional so the
+  // mock evaluator can skip it.
+  classifyPhoto?(imageBase64: string): Promise<PhotoClassification>;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +106,12 @@ function averageConfidence(criteria: EvaluationCriterionResult[]): number {
 // Prompt builder (PRD §8.3)
 // ---------------------------------------------------------------------------
 
-function buildAnglePrompt(styleName: string, styleNuanceContext: string, angle: AnglePayload): string {
+function buildAnglePrompt(
+  styleName: string,
+  styleNuanceContext: string,
+  angle: AnglePayload,
+  styleStrictnessNote = ''
+): string {
   const hasProportionalOrPositional = angle.criteria.some(
     (c) => c.evaluationType === EvaluationType.PROPORTIONAL || c.evaluationType === EvaluationType.POSITIONAL
   );
@@ -126,6 +146,13 @@ ${correctionEntries.join('\n')}
 `
       : '';
 
+  const strictnessBlock = styleStrictnessNote
+    ? `
+CALIBRATION FROM SUPERVISORS (overall feedback on your past verdicts for this style — adjust your overall strictness accordingly):
+${styleStrictnessNote}
+`
+    : '';
+
   return `You are a quality control inspector for Regirl, a wig manufacturing brand.
 Your job is to compare a submitted wig photo to approved reference images and decide whether the submission matches the reference closely enough to pass — not whether the wig is perfect in absolute terms.
 
@@ -146,29 +173,38 @@ For PROPORTIONAL and POSITIONAL evaluations: a vertical ruler is visible in both
 }
 IMAGES: You are given ${angle.referenceImagesBase64.length} reference image${angle.referenceImagesBase64.length === 1 ? '' : 's'} followed by 1 submission image (the last image).
 
-YOUR TASK — COMPARISON, NOT PERFECTION:
-The reference images are approved passing examples. A submission PASSES when it looks like the reference on a given criterion. A submission FAILS only when it is visibly and clearly worse than the reference on that specific criterion.
+YOUR TASK — STRICT CONFORMITY TO THE REFERENCE STANDARD:
+This is a rule-enforced visual conformity check, not a lenient pass-through. Every wig that ships must be visually indistinguishable from the approved reference for this style. Enforce the standard mechanically and remove tolerance creep — do NOT give the submission the benefit of the doubt.
 
-Do NOT apply your own standard of quality. Do NOT fail something because it could theoretically be better. The question for every criterion is: "Does the submission look like the reference on this?"
+THE GOLDEN RULE: every criterion is judged on its own. A good result on one criterion NEVER compensates for a deviation on another. If a criterion deviates from its acceptable standard, mark THAT criterion FAIL — regardless of how good everything else looks.
+
+Each criterion below has an "acceptable_standard". A criterion PASSES only when the submission clearly meets that standard and matches the reference. If you can see the submission deviate from the standard, it FAILS. Judge against the reference standard, not against absolute perfection — but a real, visible deviation from the standard is a FAIL, not a PASS.
+
+SEVERITY — do not decide the overall wig verdict; that is computed downstream from your per-criterion results. Your job is only to assign each criterion's result and its severity. When a criterion FAILS, its "severity" MUST equal that criterion's "severity_if_failed" exactly — never downgrade a MAJOR criterion to MINOR or upgrade a MINOR one. A MAJOR fail will fail the whole wig; a MINOR-only fail is advisory and may be overridden by a supervisor — so assign severity faithfully and do not soften a real MAJOR deviation just because it seems small.
+
+GATING — CHECK THIS FIRST, BEFORE SCORING ANY CRITERION (never pass by default):
+Confirm the submission is actually the correct, assessable photo for this capture angle (${angle.angleKey} — ${angle.angleLabel}):
+- If the submission does NOT show this wig at the expected capture angle, shows the wrong view, shows something that is not this wig, or is framed so the region a criterion needs is not shown → you CANNOT confirm conformity. Do NOT return PASS. Return FAIL for criteria that plainly cannot be satisfied by this image (it is not the required shot), with a failure_reason that says exactly what is wrong with the photo.
+- If the submission is simply too blurry, too dark, or too poorly lit to see the detail a criterion needs → return LOW confidence for that criterion (a human will review it). Not being able to see something is NOT the same as it being acceptable.
 
 Step-by-step for each criterion:
-1. Look at the reference image(s) for this criterion.
-2. Look at the submission image for the same criterion.
-3. Ask: Is there a clear, visible difference between them that makes the submission worse?
-   - YES and you can describe exactly what you see → FAIL (HIGH or MEDIUM confidence)
-   - NO or you cannot clearly see a difference → PASS
+1. Read the criterion's acceptable_standard and look at the reference image(s).
+2. Look at the submission image for the same region.
+3. Decide:
+   - Submission clearly meets the standard and matches the reference → PASS (HIGH or MEDIUM confidence).
+   - You can see a deviation from the standard, or the gating check above failed for this criterion → FAIL (HIGH or MEDIUM confidence). Describe exactly what you see and where.
+   - You genuinely cannot see the detail well enough to judge (blur, darkness, framing) → LOW confidence.
 
 CONFIDENCE:
-- HIGH: you can point to a specific, unambiguous defect visible in the submission that is absent in the reference. State exactly what and where.
-- MEDIUM: you see a likely issue but lighting or angle limits certainty.
-- LOW: you cannot clearly assess this criterion from these images. Result MUST be PASS.
-- NEVER return FAIL with LOW confidence — if you cannot clearly see it, it is not a defect.
-- Dark fibers (dark wigs) absorb light and hide detail. Do not claim HIGH confidence on dark-fiber wigs unless the defect is unmistakably visible despite the color.
+- HIGH: you can clearly see the relevant area and judge it with certainty — whether PASS or FAIL.
+- MEDIUM: you can see it but lighting or angle limits certainty.
+- LOW: you cannot clearly assess this criterion. This routes the wig to a human reviewer — it is the correct response to bad lighting, blur, framing, or a missing view. When your confidence is LOW, set result to PASS so the system flags the session for human review; do NOT use FAIL to express uncertainty. NEVER return FAIL with LOW confidence — a FAIL means you can actually see the deviation.
+- Dark fibers (dark wigs) absorb light and hide detail. On dark fiber, judge using sheen patterns, clear silhouette edges, and shadow depth. If those clues are not visible enough to judge, return LOW confidence rather than guessing — do NOT default to PASS.
 
 IMPORTANT:
 - Do NOT evaluate based on hair colour — colour variations are expected and intentional.
-- Return ONLY a valid JSON array. No explanation, no markdown, no text outside the JSON.
-${correctionBlock}
+- Return ONLY a valid JSON array, one object per criterion. No explanation, no markdown, no text outside the JSON.
+${correctionBlock}${strictnessBlock}
 Criteria to evaluate:
 ${criteriaJson}
 
@@ -268,6 +304,116 @@ function mapCriterionResponse(r: CriterionResponse): EvaluationCriterionResult {
 }
 
 // ---------------------------------------------------------------------------
+// Dedicated photo validation (is this a wig, and which angle?)
+// ---------------------------------------------------------------------------
+
+const KNOWN_ANGLE_KEYS = [
+  'FRONT_FULL',
+  'LEFT_PROFILE',
+  'RIGHT_PROFILE',
+  'BACK_FULL',
+  'TOP_DOWN',
+  'CLOSEUP_LACE',
+  'CLOSEUP_ENDS'
+] as const;
+
+const ANGLE_LABELS: Record<string, string> = {
+  FRONT_FULL: 'front',
+  LEFT_PROFILE: 'left profile',
+  RIGHT_PROFILE: 'right profile',
+  BACK_FULL: 'back',
+  TOP_DOWN: 'top-down',
+  CLOSEUP_LACE: 'close-up lace',
+  CLOSEUP_ENDS: 'close-up ends'
+};
+
+// Some viewpoints genuinely overlap and the model cannot tell them apart, so we
+// only treat a photo as the "wrong angle" when it falls in a clearly different
+// group. Within a group, any photo is accepted:
+//   - crown/parting from above: TOP_DOWN and CLOSEUP_LACE look the same
+//   - body/length from the front or sides: FRONT, both PROFILES, and CLOSEUP_ENDS
+//     all show hair length/ends and are easily confused
+//   - the back is distinct
+// This still catches gross errors (a back shot in a front slot, a top-down in a
+// back slot) without false-positiving on legitimate close-ups.
+const ANGLE_GROUPS: string[][] = [
+  ['TOP_DOWN', 'CLOSEUP_LACE'],
+  ['FRONT_FULL', 'LEFT_PROFILE', 'RIGHT_PROFILE', 'CLOSEUP_ENDS'],
+  ['BACK_FULL']
+];
+
+function anglesCompatible(detected: string, expected: string): boolean {
+  if (detected === expected) return true;
+  return ANGLE_GROUPS.some((g) => g.includes(detected) && g.includes(expected));
+}
+
+export const PHOTO_CLASSIFIER_PROMPT = `You are validating a single photo submitted for wig quality control. Look ONLY at this one image and report what it actually is. Do NOT assume it is a wig.
+
+Return ONLY strict JSON, no markdown:
+{
+  "is_wig_photo": boolean,  // true ONLY if the image clearly shows a hair wig (on a mannequin head, a stand, or held up). false for documents, QR codes, screenshots, invitations, photos of people's faces, random objects, or blank/unclear images.
+  "detected_angle": "FRONT_FULL" | "LEFT_PROFILE" | "RIGHT_PROFILE" | "BACK_FULL" | "TOP_DOWN" | "CLOSEUP_LACE" | "CLOSEUP_ENDS" | "UNKNOWN",  // which wig viewpoint this photo best matches; UNKNOWN if not a wig or unclear
+  "description": "a few words describing what the image actually shows"
+}`;
+
+const PhotoClassificationSchema = z.object({
+  is_wig_photo: z.boolean(),
+  detected_angle: z.string(),
+  description: z.string().nullable()
+});
+
+function parsePhotoClassification(raw: string): PhotoClassification {
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/im, '')
+    .replace(/\s*```\s*$/im, '')
+    .trim();
+  const parsed = PhotoClassificationSchema.parse(JSON.parse(cleaned));
+  const detected = parsed.detected_angle?.toUpperCase();
+  return {
+    isWigPhoto: parsed.is_wig_photo,
+    detectedAngle: (KNOWN_ANGLE_KEYS as readonly string[]).includes(detected) ? detected : 'UNKNOWN',
+    description: parsed.description ?? ''
+  };
+}
+
+/**
+ * Runs the dedicated photo-validation pass over every submitted angle using the
+ * configured provider. Returns one issue per photo that is not a wig, or that
+ * clearly shows the wrong capture angle. Returns [] when the provider cannot
+ * classify (e.g. mock) so evaluation proceeds normally.
+ */
+export async function validatePhotos(angles: AnglePayload[]): Promise<PhotoIssue[]> {
+  const evaluator = pickEvaluator();
+  if (!evaluator.classifyPhoto) return [];
+
+  const issues: PhotoIssue[] = [];
+  for (const angle of angles) {
+    let cls: PhotoClassification;
+    try {
+      cls = await evaluator.classifyPhoto(angle.submissionImageBase64);
+    } catch (err) {
+      console.warn(`[ai] photo classification failed for ${angle.angleKey}:`, err instanceof Error ? err.message : err);
+      continue; // don't block evaluation on a classifier hiccup
+    }
+
+    if (!cls.isWigPhoto) {
+      issues.push({
+        angleKey: angle.angleKey,
+        angleLabel: angle.angleLabel,
+        problem: `not a wig photo${cls.description ? ` (looks like: ${cls.description})` : ''}`
+      });
+    } else if (cls.detectedAngle !== 'UNKNOWN' && !anglesCompatible(cls.detectedAngle, angle.angleKey)) {
+      issues.push({
+        angleKey: angle.angleKey,
+        angleLabel: angle.angleLabel,
+        problem: `looks like a ${ANGLE_LABELS[cls.detectedAngle] ?? cls.detectedAngle} shot, not ${angle.angleLabel}`
+      });
+    }
+  }
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
 // Gemini evaluator
 // ---------------------------------------------------------------------------
 
@@ -281,12 +427,22 @@ class GeminiVisionEvaluator implements VisionEvaluator {
     this.model = 'gemini-2.0-flash';
   }
 
+  async classifyPhoto(imageBase64: string): Promise<PhotoClassification> {
+    const model = this.client.getGenerativeModel({ model: this.model });
+    const data = await fetchImageBase64(imageBase64);
+    const result = await model.generateContent([
+      PHOTO_CLASSIFIER_PROMPT,
+      { inlineData: { data, mimeType: 'image/jpeg' } }
+    ]);
+    return parsePhotoClassification(result.response.text());
+  }
+
   async evaluateSession(payload: SessionPayload): Promise<SessionEvaluationResult> {
     const model = this.client.getGenerativeModel({ model: this.model });
     const allCriteria: EvaluationCriterionResult[] = [];
 
     for (const angle of payload.angles) {
-      const prompt = buildAnglePrompt(payload.styleName, payload.styleNuanceContext, angle);
+      const prompt = buildAnglePrompt(payload.styleName, payload.styleNuanceContext, angle, payload.styleStrictnessNote);
 
       // Build parts: reference images first, then submission image
       const imageParts: Part[] = [];
@@ -347,11 +503,30 @@ class OpenAIVisionEvaluator implements VisionEvaluator {
     this.model = 'gpt-4o';
   }
 
+  async classifyPhoto(imageBase64: string): Promise<PhotoClassification> {
+    const data = await fetchImageBase64(imageBase64);
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      max_tokens: 300,
+      temperature: 0,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: PHOTO_CLASSIFIER_PROMPT },
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${data}`, detail: 'low' } }
+          ]
+        }
+      ]
+    });
+    return parsePhotoClassification(response.choices[0]?.message?.content ?? '{}');
+  }
+
   async evaluateSession(payload: SessionPayload): Promise<SessionEvaluationResult> {
     const allCriteria: EvaluationCriterionResult[] = [];
 
     for (const angle of payload.angles) {
-      const prompt = buildAnglePrompt(payload.styleName, payload.styleNuanceContext, angle);
+      const prompt = buildAnglePrompt(payload.styleName, payload.styleNuanceContext, angle, payload.styleStrictnessNote);
 
       const imageContent: OpenAI.Chat.ChatCompletionContentPart[] = [];
 

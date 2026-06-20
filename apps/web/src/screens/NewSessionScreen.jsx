@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchSkus, createSession as apiCreateSession, fetchSessionsForWig, getSessionDetail, mapSessionResult } from '../api'
 import { useSession } from '../context/SessionContext'
+import { useProfile } from '../context/ProfileContext'
+import { nextWigId } from '../lib/wigId'
 
 const BRAND = '#3B0F0D'
 const OFF_WHITE = '#FFFCF2'
@@ -25,14 +27,17 @@ const inputStyle = {
 export default function NewSessionScreen() {
   const navigate = useNavigate()
   const { createSession, inProgressSessions } = useSession()
+  const { stylistName: savedName, hasProfile, setStylistName: saveStylistName } = useProfile()
 
   const [skus, setSkus] = useState([])
   const [loadingSkus, setLoadingSkus] = useState(true)
   const [skuId, setSkuId] = useState('')
-  const [stylistName, setStylistName] = useState('')
-  const [wigId, setWigId] = useState('')
+  const [nameInput, setNameInput] = useState('') // only used when no profile yet
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+
+  // Effective stylist name: stored profile, or what the user is entering first time.
+  const stylistName = hasProfile ? savedName : nameInput
 
   useEffect(() => {
     fetchSkus()
@@ -42,12 +47,15 @@ export default function NewSessionScreen() {
   }, [])
 
   const selectedSku = skus.find((s) => s.id === skuId)
-  const canContinue = skuId && stylistName.trim() && wigId.trim() && !submitting
+  const canContinue = skuId && stylistName.trim() && !submitting
 
   async function handleContinue() {
     if (!selectedSku) return
     setSubmitting(true)
     setError('')
+    // First-time stylist: persist the name as the profile so it's never asked again.
+    if (!hasProfile) saveStylistName(nameInput.trim())
+    const wigId = nextWigId()
     try {
       // Check for previous failed sessions on this wig that need rating
       let previousFailedCriteria = []
@@ -103,7 +111,7 @@ export default function NewSessionScreen() {
         </p>
         <h1 className="text-2xl font-bold leading-tight">New Session</h1>
         <p className="text-sm mt-1" style={{ opacity: 0.65 }}>
-          Enter the wig details before uploading photos.
+          Pick the SKU — a Wig ID is assigned automatically.
           {inProgressSessions.length > 0 && (
             <span>
               {' '}A new session will be created alongside your {inProgressSessions.length} in-progress session{inProgressSessions.length > 1 ? 's' : ''}.
@@ -136,29 +144,40 @@ export default function NewSessionScreen() {
           )}
         </div>
 
-        <div>
-          <FieldLabel>Stylist Name</FieldLabel>
-          <input
-            type="text"
-            placeholder="e.g. Maria Santos"
-            value={stylistName}
-            onChange={(e) => setStylistName(e.target.value)}
-            className="w-full rounded-xl px-4 py-3.5 text-sm"
-            style={inputStyle}
-          />
-        </div>
-
-        <div>
-          <FieldLabel>Wig ID</FieldLabel>
-          <input
-            type="text"
-            placeholder="e.g. WIG-20240328-001"
-            value={wigId}
-            onChange={(e) => setWigId(e.target.value)}
-            className="w-full rounded-xl px-4 py-3.5 text-sm"
-            style={inputStyle}
-          />
-        </div>
+        {hasProfile ? (
+          <div>
+            <FieldLabel>Stylist</FieldLabel>
+            <div
+              className="w-full rounded-xl px-4 py-3.5 text-sm flex items-center justify-between"
+              style={inputStyle}
+            >
+              <span>{savedName}</span>
+              <button
+                type="button"
+                onClick={() => saveStylistName('')}
+                className="text-xs font-semibold underline"
+                style={{ color: BRAND, opacity: 0.6 }}
+              >
+                Change
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <FieldLabel>Stylist Name</FieldLabel>
+            <input
+              type="text"
+              placeholder="e.g. Maria Santos"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              className="w-full rounded-xl px-4 py-3.5 text-sm"
+              style={inputStyle}
+            />
+            <p className="text-xs mt-1.5" style={{ opacity: 0.55 }}>
+              We'll remember this so you won't need to enter it again.
+            </p>
+          </div>
+        )}
 
         {error && (
           <p className="text-sm font-medium" style={{ color: '#dc2626' }}>

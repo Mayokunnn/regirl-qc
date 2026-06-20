@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { Job, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import {
@@ -7,7 +8,8 @@ import {
   confidenceToFloat,
   deriveSessionVerdict,
   pickEvaluator,
-  pickFallbackEvaluator
+  pickFallbackEvaluator,
+  validatePhotos
 } from '@regirl/ai';
 import { getEnv } from '@regirl/config';
 import { PrismaClient, SessionStatus, Verdict, Severity } from '@regirl/db';
@@ -130,6 +132,107 @@ async function buildCorrectionNotes(styleId: string): Promise<Map<string, string
   return notes;
 }
 
+/**
+ * Builds a style-level calibration note from supervisors' overall agree/disagree
+ * feedback on past sessions of this style. We only act on the unambiguous signal:
+ * a disagreement with a PASS/ADVISORY verdict means the model let a defective
+ * submission through (too lenient). Disagreements with FAIL verdicts are skipped
+ * because the direction is ambiguous (could mean "too strict" or "should have
+ * failed harder") — the precise per-criterion corrections handle those instead.
+ * Returns '' when there is no actionable signal.
+ */
+async function buildStyleStrictnessNote(styleId: string): Promise<string> {
+  const tooLenient = await prisma.verdictFeedback.findMany({
+    where: {
+      agreed: false,
+      session: { styleId, finalVerdict: { in: [Verdict.pass, Verdict.advisory] } }
+    },
+    select: { comment: true },
+    orderBy: { createdAt: 'desc' },
+    take: 200
+  });
+
+  if (tooLenient.length === 0) return '';
+
+  const examples = tooLenient
+    .map((f) => f.comment?.trim())
+    .filter((c): c is string => !!c)
+    .slice(0, 3)
+    .map((c) => `"${c}"`)
+    .join('; ');
+
+  return `Supervisors disagreed with ${tooLenient.length} recent PASS/ADVISORY verdict(s) on this style — you have been TOO LENIENT and passed submissions that should have failed. Scrutinise every criterion more strictly and do not pass a submission unless it clearly matches the reference.${examples ? ` Supervisor notes: ${examples}.` : ''}`;
+}
+
+/**
+ * Returns the angle keys that share an identical submission image with at least
+ * one other angle (i.e. the same photo was used for multiple slots). Empty when
+ * every angle has a distinct photo.
+ */
+function findDuplicateAngles(anglePayloads: AnglePayload[]): string[] {
+  const byHash = new Map<string, string[]>();
+  for (const a of anglePayloads) {
+    const hash = createHash('sha256').update(a.submissionImageBase64).digest('hex');
+    const list = byHash.get(hash) ?? [];
+    list.push(a.angleKey);
+    byHash.set(hash, list);
+  }
+  const dupes: string[] = [];
+  for (const angles of byHash.values()) {
+    if (angles.length > 1) dupes.push(...angles);
+  }
+  return dupes;
+}
+
+/**
+ * Writes a NEEDS_REVIEW evaluation for a submission we refused to score (e.g.
+ * duplicate photos). Surfaces a single explanatory criterion so the reason is
+ * visible in the app, and routes the session to a human rather than emitting a
+ * misleading PASS/FAIL.
+ */
+async function writeInvalidSubmission(
+  sessionId: string,
+  referenceSetVersion: number,
+  message: string
+): Promise<void> {
+  const evaluation = await prisma.sessionEvaluation.create({
+    data: {
+      sessionId,
+      provider: 'validation',
+      fallbackUsed: false,
+      overallVerdict: Verdict.needs_review,
+      confidence: 0,
+      reworkInstructions: message,
+      promptVersion: 'validation',
+      referenceSetVersion
+    }
+  });
+
+  await prisma.sessionCriterionResult.create({
+    data: {
+      evaluationId: evaluation.id,
+      criterionKey: 'photo-validation',
+      verdict: Verdict.fail,
+      confidence: 1,
+      severity: Severity.major,
+      failureReason: message,
+      failureLocation: null,
+      reworkInstruction: message
+    }
+  });
+
+  await prisma.qcSession.update({
+    where: { id: sessionId },
+    data: {
+      status: SessionStatus.completed,
+      completedAt: new Date(),
+      finalVerdict: Verdict.needs_review,
+      finalReworkText: message,
+      referenceVersionUsed: referenceSetVersion
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Worker
 // ---------------------------------------------------------------------------
@@ -192,6 +295,12 @@ const worker = new Worker(
     const correctionNotesByCriterion = await buildCorrectionNotes(session.styleId);
     if (correctionNotesByCriterion.size > 0) {
       console.log(`[worker] loaded learned corrections for ${correctionNotesByCriterion.size} criteria`);
+    }
+
+    // Few-shot learning: style-level strictness calibration from overall feedback.
+    const styleStrictnessNote = await buildStyleStrictnessNote(session.styleId);
+    if (styleStrictnessNote) {
+      console.log(`[worker] applying style strictness calibration: ${styleStrictnessNote.slice(0, 80)}…`);
     }
 
     // Build per-angle payloads (PRD §8.2)
@@ -263,6 +372,35 @@ const worker = new Worker(
       return;
     }
 
+    // Guard: reject sessions where the same photo was dropped into more than one
+    // angle slot. The LLM cannot reliably tell that a photo is the wrong shot for
+    // its slot, so we catch the obvious case (identical bytes) deterministically
+    // before spending an AI call — and surface a clear, honest reason.
+    const duplicateAngles = findDuplicateAngles(anglePayloads);
+    if (duplicateAngles.length > 0) {
+      console.warn(`[worker] job ${job.id} — duplicate photos across angles: ${duplicateAngles.join(', ')}. Rejecting.`);
+      await writeInvalidSubmission(
+        session.id,
+        activeReference.version,
+        `The same photo was uploaded for multiple angles (${duplicateAngles.join(', ')}). Each capture angle needs its own distinct photo. Re-shoot each angle and resubmit.`
+      );
+      return;
+    }
+
+    // Guard: dedicated photo-validation pass — reject photos that are not a wig
+    // or clearly show the wrong capture angle, before spending a full evaluation.
+    const photoIssues = await validatePhotos(anglePayloads);
+    if (photoIssues.length > 0) {
+      const summary = photoIssues.map((i) => `${i.angleLabel}: ${i.problem}`).join('; ');
+      console.warn(`[worker] job ${job.id} — photo validation failed: ${summary}. Rejecting.`);
+      await writeInvalidSubmission(
+        session.id,
+        activeReference.version,
+        `Some photos are not valid for their slot — ${summary}. Re-shoot the affected angles with the correct photo and resubmit.`
+      );
+      return;
+    }
+
     console.log(`[worker] built ${anglePayloads.length} angle payloads — sending to AI evaluator`);
 
     const sessionPayload: SessionPayload = {
@@ -272,6 +410,7 @@ const worker = new Worker(
       styleNuanceContext: session.style.styleNuanceContext ?? '',
       stylistName: session.stylistName,
       wigId: session.wigId,
+      styleStrictnessNote,
       angles: anglePayloads,
       referenceSetVersion: activeReference.version,
       promptVersion: activeReference.promptVersion

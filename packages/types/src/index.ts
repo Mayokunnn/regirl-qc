@@ -68,6 +68,12 @@ export interface SessionPayload {
   styleNuanceContext: string;
   stylistName: string;
   wigId: string;
+  /**
+   * Style-level calibration note derived from supervisors' overall agree/disagree
+   * feedback on past sessions of this style. Nudges the model stricter or more
+   * lenient across all criteria. Empty string when there is no signal.
+   */
+  styleStrictnessNote?: string;
   angles: AnglePayload[];
   referenceSetVersion: number;
   promptVersion: string;

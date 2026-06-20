@@ -16,6 +16,58 @@ function toDateInput(d) {
   return d.toISOString().slice(0, 10)
 }
 
+// Quick-filter presets. `days` is the number of days back from today; null = custom.
+const QUICK_FILTERS = [
+  { key: 'today', label: 'Today', days: 0 },
+  { key: 'yesterday', label: 'Yesterday', days: 1, single: true },
+  { key: '7d', label: 'Last 7 days', days: 6 },
+  { key: '30d', label: 'Last 30 days', days: 29 },
+  { key: 'custom', label: 'Custom', days: null },
+]
+
+function rangeForFilter(key) {
+  const today = new Date()
+  if (key === 'yesterday') {
+    const y = new Date(today)
+    y.setDate(today.getDate() - 1)
+    return { from: y, to: y }
+  }
+  const preset = QUICK_FILTERS.find((f) => f.key === key)
+  const from = new Date(today)
+  from.setDate(today.getDate() - (preset?.days ?? 0))
+  return { from, to: today }
+}
+
+function dayKey(iso) {
+  return new Date(iso).toISOString().slice(0, 10)
+}
+
+function dayHeading(iso) {
+  const d = new Date(iso)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+  if (dayKey(iso) === toDateInput(today)) return 'Today'
+  if (dayKey(iso) === toDateInput(yesterday)) return 'Yesterday'
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+// Groups entries by calendar day, newest day first, newest entry first within a day.
+function groupByDay(entries) {
+  const sorted = [...entries].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+  const groups = []
+  const index = {}
+  for (const entry of sorted) {
+    const key = dayKey(entry.timestamp)
+    if (!(key in index)) {
+      index[key] = groups.length
+      groups.push({ key, heading: dayHeading(entry.timestamp), items: [] })
+    }
+    groups[index[key]].items.push(entry)
+  }
+  return groups
+}
+
 function ChevronIcon({ open }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
@@ -108,7 +160,22 @@ function HistoryRow({ entry }) {
                   <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ opacity: 0.5 }}>Quality Criteria</p>
                   <div className="space-y-2">
                     {[...criteria.filter((c) => c.status === 'FAIL'), ...criteria.filter((c) => c.status !== 'FAIL')].map((c) => (
-                      <CriterionCard key={c.id} criterion={c} />
+                      <CriterionCard
+                        key={c.id}
+                        criterion={c}
+                        onRated={(criterionId, patch) =>
+                          setDetail((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  criteria: prev.criteria.map((x) =>
+                                    x.id === criterionId ? { ...x, ...patch } : x
+                                  ),
+                                }
+                              : prev
+                          )
+                        }
+                      />
                     ))}
                   </div>
                 </>
@@ -130,15 +197,22 @@ function HistoryRow({ entry }) {
 }
 
 export default function HistoryScreen() {
-  const today = new Date()
-  const threeDaysAgo = new Date(today)
-  threeDaysAgo.setDate(today.getDate() - 3)
+  const initial = rangeForFilter('7d')
 
-  const [fromDate, setFromDate] = useState(toDateInput(threeDaysAgo))
-  const [toDate, setToDate] = useState(toDateInput(today))
+  const [activeFilter, setActiveFilter] = useState('7d')
+  const [fromDate, setFromDate] = useState(toDateInput(initial.from))
+  const [toDate, setToDate] = useState(toDateInput(initial.to))
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  function applyFilter(key) {
+    setActiveFilter(key)
+    if (key === 'custom') return // keep current dates; reveal pickers
+    const { from, to } = rangeForFilter(key)
+    setFromDate(toDateInput(from))
+    setToDate(toDateInput(to))
+  }
 
   useEffect(() => {
     setLoading(true)
@@ -163,18 +237,42 @@ export default function HistoryScreen() {
         <h1 className="text-2xl font-bold leading-tight">Session History</h1>
       </div>
 
-      <div className="px-5 mb-5">
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <label className="block text-xs font-semibold mb-1" style={{ opacity: 0.6 }}>From</label>
-            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full rounded-xl px-3 py-2.5 text-sm" style={inputStyle} />
-          </div>
-          <div className="flex-1">
-            <label className="block text-xs font-semibold mb-1" style={{ opacity: 0.6 }}>To</label>
-            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full rounded-xl px-3 py-2.5 text-sm" style={inputStyle} />
-          </div>
+      <div className="px-5 mb-4">
+        <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+          {QUICK_FILTERS.map((f) => {
+            const active = activeFilter === f.key
+            return (
+              <button
+                key={f.key}
+                onClick={() => applyFilter(f.key)}
+                className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full"
+                style={{
+                  backgroundColor: active ? BRAND : WARM_CREAM,
+                  color: active ? OFF_WHITE : BRAND,
+                  border: `1.5px solid ${active ? BRAND : 'rgba(59,15,13,0.2)'}`,
+                }}
+              >
+                {f.label}
+              </button>
+            )
+          })}
         </div>
       </div>
+
+      {activeFilter === 'custom' && (
+        <div className="px-5 mb-5">
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold mb-1" style={{ opacity: 0.6 }}>From</label>
+              <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full rounded-xl px-3 py-2.5 text-sm" style={inputStyle} />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-semibold mb-1" style={{ opacity: 0.6 }}>To</label>
+              <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full rounded-xl px-3 py-2.5 text-sm" style={inputStyle} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 px-5 space-y-3">
         {loading ? (
@@ -193,7 +291,16 @@ export default function HistoryScreen() {
             <p className="text-sm font-medium">No sessions in this date range</p>
           </div>
         ) : (
-          entries.map((entry) => <HistoryRow key={entry.id} entry={entry} />)
+          groupByDay(entries).map((group) => (
+            <div key={group.key} className="space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wider pt-1" style={{ opacity: 0.5 }}>
+                {group.heading}
+              </p>
+              {group.items.map((entry) => (
+                <HistoryRow key={entry.id} entry={entry} />
+              ))}
+            </div>
+          ))
         )}
       </div>
     </div>

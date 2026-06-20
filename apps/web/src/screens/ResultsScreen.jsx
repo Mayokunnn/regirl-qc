@@ -4,7 +4,6 @@ import { useSession } from '../context/SessionContext'
 import { saveVerdictFeedback } from '../api'
 import VerdictBadge from '../components/VerdictBadge'
 import CriterionCard from '../components/CriterionCard'
-import SessionSwitcher from '../components/SessionSwitcher'
 
 const BRAND = '#3B0F0D'
 const OFF_WHITE = '#FFFCF2'
@@ -23,7 +22,7 @@ function formatTimestamp(iso) {
 
 export default function ResultsScreen() {
   const navigate = useNavigate()
-  const { activeSession } = useSession()
+  const { activeSession, patchActiveCriterion } = useSession()
 
   const qcResult = activeSession?.result ?? null
 
@@ -91,11 +90,6 @@ export default function ResultsScreen() {
         </div>
       </div>
 
-      {/* Other sessions (uploading, processing, or completed) */}
-      <div className="pt-4">
-        <SessionSwitcher />
-      </div>
-
       {/* Criteria list */}
       <div className="px-5 pt-5 pb-4">
         <h2 className="text-base font-bold mb-4" style={{ color: BRAND }}>
@@ -106,14 +100,14 @@ export default function ResultsScreen() {
             ...qcResult.criteria.filter((c) => c.status === 'FAIL'),
             ...qcResult.criteria.filter((c) => c.status === 'PASS'),
           ].map((c) => (
-            <CriterionCard key={c.id} criterion={c} />
+            <CriterionCard key={c.id} criterion={c} onRated={patchActiveCriterion} />
           ))}
         </div>
       </div>
 
       {/* Overall verdict feedback (optional) */}
       <div className="px-5 pb-2">
-        <VerdictFeedbackBox sessionId={activeSession?.id} />
+        <VerdictFeedbackBox key={activeSession?.apiSessionId} sessionId={activeSession?.apiSessionId} />
       </div>
 
       {/* Start new session — does NOT reset existing sessions */}
@@ -130,8 +124,14 @@ export default function ResultsScreen() {
   )
 }
 
+function verdictFeedbackKey(sessionId) {
+  return `verdictFeedbackDone:${sessionId}`
+}
+
 function VerdictFeedbackBox({ sessionId }) {
-  const [submitted, setSubmitted] = useState(false)
+  const [submitted, setSubmitted] = useState(
+    () => !!sessionId && localStorage.getItem(verdictFeedbackKey(sessionId)) === '1'
+  )
   const [showComment, setShowComment] = useState(false)
   const [agreed, setAgreed] = useState(null)
   const [comment, setComment] = useState('')
@@ -144,6 +144,7 @@ function VerdictFeedbackBox({ sessionId }) {
     setSaving(true)
     try {
       await saveVerdictFeedback(sessionId, agreeValue, withComment ? comment.trim() || undefined : undefined)
+      localStorage.setItem(verdictFeedbackKey(sessionId), '1')
       setSubmitted(true)
     } catch (err) {
       console.error('[verdict-feedback] failed', err)
