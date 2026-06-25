@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { fetchHistory, getSessionDetail, mapSessionResult } from '../api'
+import { useCachedFetch } from '../lib/useCachedFetch'
 import VerdictBadge from '../components/VerdictBadge'
 import CriterionCard from '../components/CriterionCard'
 
@@ -202,9 +203,6 @@ export default function HistoryScreen() {
   const [activeFilter, setActiveFilter] = useState('7d')
   const [fromDate, setFromDate] = useState(toDateInput(initial.from))
   const [toDate, setToDate] = useState(toDateInput(initial.to))
-  const [entries, setEntries] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
 
   function applyFilter(key) {
     setActiveFilter(key)
@@ -214,14 +212,11 @@ export default function HistoryScreen() {
     setToDate(toDateInput(to))
   }
 
-  useEffect(() => {
-    setLoading(true)
-    setError('')
-    fetchHistory(new Date(fromDate), new Date(toDate))
-      .then(setEntries)
-      .catch(() => setError('Failed to load history.'))
-      .finally(() => setLoading(false))
-  }, [fromDate, toDate])
+  const { data, loading, error } = useCachedFetch(
+    `history:${fromDate}:${toDate}`,
+    () => fetchHistory(new Date(fromDate), new Date(toDate))
+  )
+  const entries = data ?? []
 
   const inputStyle = {
     backgroundColor: WARM_CREAM,
@@ -282,7 +277,7 @@ export default function HistoryScreen() {
             </svg>
           </div>
         ) : error ? (
-          <p className="text-sm text-center py-8" style={{ color: '#dc2626' }}>{error}</p>
+          <p className="text-sm text-center py-8" style={{ color: '#dc2626' }}>Failed to load history.</p>
         ) : entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ opacity: 0.45 }}>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchSkus, createSession as apiCreateSession, fetchSessionsForWig, getSessionDetail, mapSessionResult } from '../api'
 import { useSession } from '../context/SessionContext'
 import { useProfile } from '../context/ProfileContext'
+import { useCachedFetch } from '../lib/useCachedFetch'
 import { nextWigId } from '../lib/wigId'
 
 const BRAND = '#3B0F0D'
@@ -29,8 +30,8 @@ export default function NewSessionScreen() {
   const { createSession, inProgressSessions } = useSession()
   const { stylistName: savedName, hasProfile, setStylistName: saveStylistName } = useProfile()
 
-  const [skus, setSkus] = useState([])
-  const [loadingSkus, setLoadingSkus] = useState(true)
+  const { data: skusData, loading: loadingSkus } = useCachedFetch('skus', fetchSkus)
+  const skus = skusData ?? []
   const [skuId, setSkuId] = useState('')
   const [nameInput, setNameInput] = useState('') // only used when no profile yet
   const [submitting, setSubmitting] = useState(false)
@@ -38,13 +39,6 @@ export default function NewSessionScreen() {
 
   // Effective stylist name: stored profile, or what the user is entering first time.
   const stylistName = hasProfile ? savedName : nameInput
-
-  useEffect(() => {
-    fetchSkus()
-      .then(setSkus)
-      .catch(() => setError('Failed to load SKUs — is the API running?'))
-      .finally(() => setLoadingSkus(false))
-  }, [])
 
   const selectedSku = skus.find((s) => s.id === skuId)
   const canContinue = skuId && stylistName.trim() && !submitting
