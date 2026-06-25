@@ -13,6 +13,7 @@ dist-ssr
 *.local
 .turbo
 .env
+.env.production
 .local-storage
 packages/db/.env
 
