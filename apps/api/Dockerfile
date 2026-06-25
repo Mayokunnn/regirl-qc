@@ -17,16 +17,5 @@ RUN pnpm --filter @regirl/storage run build
 RUN pnpm --filter @regirl/types run build
 RUN pnpm --filter @regirl/api run build
 
-FROM node:20-alpine AS runner
-WORKDIR /app
-RUN npm install -g pnpm
-COPY --from=build /app/pnpm-workspace.yaml ./
-COPY --from=build /app/package.json ./
-COPY --from=build /app/pnpm-lock.yaml ./
-COPY --from=build /app/tsconfig.base.json ./
-COPY --from=build /app/packages/ ./packages/
-COPY --from=build /app/apps/api/ ./apps/api/
-RUN pnpm install --frozen-lockfile --prod
-RUN pnpm --filter @regirl/db exec prisma generate --schema prisma/schema.prisma
 EXPOSE 3000
 CMD ["node", "apps/api/dist/apps/api/src/main"]
