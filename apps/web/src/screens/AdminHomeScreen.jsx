@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchReferenceSets, createReferenceSet } from '../api'
-import { useCachedFetch, invalidateCache } from '../lib/useCachedFetch'
 
 const BRAND = '#3B0F0D'
 const OFF_WHITE = '#FFFCF2'
@@ -13,8 +13,11 @@ function formatDate(iso) {
 
 export default function AdminHomeScreen() {
   const navigate = useNavigate()
-  const { data, loading } = useCachedFetch('reference-sets', fetchReferenceSets)
-  const sets = data ?? []
+  const queryClient = useQueryClient()
+  const { data: sets = [], isLoading: loading } = useQuery({
+    queryKey: ['reference-sets'],
+    queryFn: fetchReferenceSets,
+  })
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
 
@@ -34,7 +37,7 @@ export default function AdminHomeScreen() {
         promptVersion: 'v1',
         description: `Reference set v${nextVersion}`,
       })
-      invalidateCache('reference-sets')
+      queryClient.invalidateQueries({ queryKey: ['reference-sets'] })
       navigate('/admin/reference', { state: { referenceSetId: newSet.id } })
     } catch {
       setError('Failed to create reference set')

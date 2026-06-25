@@ -1,6 +1,6 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { fetchHistory, getSessionDetail, mapSessionResult } from '../api'
-import { useCachedFetch } from '../lib/useCachedFetch'
 import VerdictBadge from '../components/VerdictBadge'
 import CriterionCard from '../components/CriterionCard'
 
@@ -212,11 +212,11 @@ export default function HistoryScreen() {
     setToDate(toDateInput(to))
   }
 
-  const { data, loading, error } = useCachedFetch(
-    `history:${fromDate}:${toDate}`,
-    () => fetchHistory(new Date(fromDate), new Date(toDate))
-  )
-  const entries = data ?? []
+  const { data: entries = [], isLoading: loading, isError: error } = useQuery({
+    queryKey: ['history', fromDate, toDate],
+    queryFn: () => fetchHistory(new Date(fromDate), new Date(toDate)),
+    placeholderData: (prev) => prev, // keep showing old range's data while new range loads
+  })
 
   const inputStyle = {
     backgroundColor: WARM_CREAM,
