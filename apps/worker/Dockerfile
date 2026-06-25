@@ -23,7 +23,9 @@ RUN npm install -g pnpm
 COPY --from=build /app/pnpm-workspace.yaml ./
 COPY --from=build /app/package.json ./
 COPY --from=build /app/pnpm-lock.yaml ./
+COPY --from=build /app/tsconfig.base.json ./
 COPY --from=build /app/packages/ ./packages/
 COPY --from=build /app/apps/worker/ ./apps/worker/
 RUN pnpm install --frozen-lockfile --prod
+RUN pnpm --filter @regirl/db exec prisma generate --schema prisma/schema.prisma
 CMD ["node", "apps/worker/dist/main.js"]
