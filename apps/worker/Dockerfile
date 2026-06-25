@@ -31,7 +31,8 @@ COPY --from=build /app/packages/config/dist ./packages/config/dist
 COPY --from=build /app/packages/storage/dist ./packages/storage/dist
 COPY --from=build /app/packages/types/dist ./packages/types/dist
 COPY --from=build /app/apps/worker/dist ./apps/worker/dist
+COPY --from=build /app/apps/worker/dist/apps ./apps/worker/dist/apps
 COPY --from=build /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/@prisma/client /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/@prisma/client
 COPY --from=build /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma
 RUN pnpm install --frozen-lockfile
-CMD ["node", "apps/worker/dist/main.js"]
+CMD ["node", "apps/worker/dist/apps/worker/src/main.js"]
