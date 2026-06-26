@@ -137,14 +137,14 @@ export default function AdminReferenceScreen() {
 
   if (!referenceSetId) {
     return (
-      <div className="flex items-center justify-center min-h-dvh" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
+      <div className="flex items-center justify-center min-h-full" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
         <p className="text-sm" style={{ opacity: 0.5 }}>No reference set selected.</p>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col min-h-dvh pb-32" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
+    <div className="flex flex-col min-h-full" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
       <div className="px-5 pt-10 pb-5" style={{ backgroundColor: WARM_CREAM, borderBottom: `1px solid rgba(59,15,13,0.12)` }}>
         <button onClick={() => navigate('/admin')} className="text-xs font-semibold mb-3 flex items-center gap-1" style={{ opacity: 0.6, background: 'none', border: 'none', color: BRAND, cursor: 'pointer', padding: 0 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
@@ -175,7 +175,7 @@ export default function AdminReferenceScreen() {
       </div>
 
       {!isActive && (
-        <div className="fixed bottom-16 left-0 right-0 px-5 pb-4 max-w-[430px] mx-auto" style={{ backgroundColor: OFF_WHITE }}>
+        <div className="sticky bottom-0 left-0 right-0 px-5 pt-3 pb-4" style={{ backgroundColor: OFF_WHITE, borderTop: '1px solid rgba(59,15,13,0.08)' }}>
           <button
             onClick={handleActivate}
             disabled={!canActivate || activating}

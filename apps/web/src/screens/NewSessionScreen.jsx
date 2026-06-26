@@ -100,7 +100,7 @@ export default function NewSessionScreen() {
   }
 
   return (
-    <div className="flex flex-col min-h-dvh pb-20" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
+    <div className="flex flex-col min-h-full" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
       <div className="px-5 pt-10 pb-6">
         <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ opacity: 0.55 }}>
           Regirl QC

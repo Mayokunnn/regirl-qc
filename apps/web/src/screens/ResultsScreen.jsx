@@ -40,7 +40,7 @@ export default function ResultsScreen() {
   const failed = qcResult.criteria.filter((c) => c.status === 'FAIL').length
 
   return (
-    <div className="flex flex-col min-h-dvh pb-20" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
+    <div className="flex flex-col min-h-full" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
       {/* Hero verdict banner */}
       <div
         className="px-5 pt-10 pb-6"

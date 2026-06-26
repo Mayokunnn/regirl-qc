@@ -28,22 +28,24 @@ function ProtectedApp() {
     <SessionProvider>
       <ProfileProvider>
       <div
-        className="relative w-full max-w-[430px] mx-auto min-h-dvh flex flex-col"
+        className="relative w-full max-w-[430px] mx-auto h-dvh flex flex-col overflow-hidden"
         style={{ backgroundColor: '#FFFCF2' }}
       >
         <SessionBar />
-        <Routes>
-          <Route path="/" element={<Navigate to="/checklist" replace />} />
-          <Route path="/checklist" element={<DailyChecklistScreen />} />
-          <Route path="/new-session" element={<NewSessionScreen />} />
-          <Route path="/upload" element={<PhotoUploadScreen />} />
-          <Route path="/results" element={<ResultsScreen />} />
-          <Route path="/history" element={<HistoryScreen />} />
-          <Route path="/rate-instructions" element={<RateInstructionsScreen />} />
-          <Route path="/admin" element={<AdminRoute><AdminHomeScreen /></AdminRoute>} />
-          <Route path="/admin/reference" element={<AdminRoute><AdminReferenceScreen /></AdminRoute>} />
-          <Route path="*" element={<Navigate to="/checklist" replace />} />
-        </Routes>
+        <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-4">
+          <Routes>
+            <Route path="/" element={<Navigate to="/checklist" replace />} />
+            <Route path="/checklist" element={<DailyChecklistScreen />} />
+            <Route path="/new-session" element={<NewSessionScreen />} />
+            <Route path="/upload" element={<PhotoUploadScreen />} />
+            <Route path="/results" element={<ResultsScreen />} />
+            <Route path="/history" element={<HistoryScreen />} />
+            <Route path="/rate-instructions" element={<RateInstructionsScreen />} />
+            <Route path="/admin" element={<AdminRoute><AdminHomeScreen /></AdminRoute>} />
+            <Route path="/admin/reference" element={<AdminRoute><AdminReferenceScreen /></AdminRoute>} />
+            <Route path="*" element={<Navigate to="/checklist" replace />} />
+          </Routes>
+        </main>
         <BottomNav />
       </div>
       </ProfileProvider>

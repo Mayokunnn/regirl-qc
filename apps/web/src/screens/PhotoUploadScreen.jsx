@@ -172,7 +172,7 @@ export default function PhotoUploadScreen() {
   }
 
   return (
-    <div className="flex flex-col min-h-dvh pb-20" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
+    <div className="flex flex-col min-h-full" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
       <div className="px-5 pt-10 pb-4">
         <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ opacity: 0.55 }}>Regirl QC</p>
         <h1 className="text-2xl font-bold leading-tight">Upload Photos</h1>

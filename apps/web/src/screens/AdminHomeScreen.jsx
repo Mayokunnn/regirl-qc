@@ -46,7 +46,7 @@ export default function AdminHomeScreen() {
   }
 
   return (
-    <div className="flex flex-col min-h-dvh pb-24" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
+    <div className="flex flex-col min-h-full" style={{ backgroundColor: OFF_WHITE, color: BRAND }}>
       <div className="px-5 pt-10 pb-6" style={{ backgroundColor: WARM_CREAM, borderBottom: `1px solid rgba(59,15,13,0.12)` }}>
         <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ opacity: 0.55 }}>Admin</p>
         <h1 className="text-2xl font-bold">Reference Images</h1>
