@@ -39,11 +39,7 @@ export default function BottomNav() {
 
   return (
     <nav
-      style={{
-        backgroundColor: BRAND,
-        color: CREAM,
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}
+      style={{ backgroundColor: BRAND, color: CREAM }}
       className="shrink-0 flex z-50"
     >
       <button
