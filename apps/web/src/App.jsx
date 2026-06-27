@@ -29,7 +29,12 @@ function ProtectedApp() {
       <ProfileProvider>
       <div
         className="relative w-full max-w-[430px] mx-auto h-dvh flex flex-col overflow-hidden"
-        style={{ backgroundColor: '#FFFCF2' }}
+        style={{
+          backgroundColor: '#FFFCF2',
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingLeft: 'env(safe-area-inset-left)',
+          paddingRight: 'env(safe-area-inset-right)',
+        }}
       >
         <SessionBar />
         <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-4">
