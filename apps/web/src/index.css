@@ -12,6 +12,13 @@ body {
   overscroll-behavior: none;
 }
 
+/* Brand color behind everything so any sub-pixel gap below the in-flow
+   bottom nav (iOS standalone dvh quirks) blends with the menu bar
+   instead of showing the cream body background. */
+html {
+  background-color: #3B0F0D;
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -22,7 +29,7 @@ body {
 }
 
 #root {
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;

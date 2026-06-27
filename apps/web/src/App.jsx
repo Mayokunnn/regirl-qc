@@ -28,7 +28,7 @@ function ProtectedApp() {
     <SessionProvider>
       <ProfileProvider>
       <div
-        className="relative w-full max-w-[430px] mx-auto h-dvh flex flex-col overflow-hidden"
+        className="relative w-full max-w-[430px] mx-auto h-full flex flex-col overflow-hidden"
         style={{
           backgroundColor: '#FFFCF2',
           paddingTop: 'env(safe-area-inset-top)',
