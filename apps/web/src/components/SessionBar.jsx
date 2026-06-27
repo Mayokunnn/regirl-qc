@@ -30,7 +30,7 @@ export default function SessionBar() {
 
   return (
     <div
-      className="px-4 py-2.5"
+      className="shrink-0 px-4 py-2.5"
       style={{ backgroundColor: OFF_WHITE, borderBottom: '1px solid rgba(59,15,13,0.1)' }}
     >
       <div

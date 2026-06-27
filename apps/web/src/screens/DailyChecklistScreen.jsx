@@ -39,7 +39,7 @@ export default function DailyChecklistScreen() {
 
   return (
     <div
-      className="flex flex-col min-h-dvh pb-20"
+      className="flex flex-col min-h-full"
       style={{ backgroundColor: WARM_CREAM, color: BRAND }}
     >
       {/* Header */}

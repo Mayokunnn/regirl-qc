@@ -39,8 +39,12 @@ export default function BottomNav() {
 
   return (
     <nav
-      style={{ backgroundColor: BRAND, color: CREAM }}
-      className="fixed bottom-0 left-0 right-0 flex z-50 max-w-[430px] mx-auto"
+      style={{
+        backgroundColor: BRAND,
+        color: CREAM,
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
+      className="shrink-0 flex z-50"
     >
       <button
         onClick={() => navigate('/new-session')}
