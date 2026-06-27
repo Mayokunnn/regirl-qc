@@ -23,7 +23,11 @@ body {
   margin: 0;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background-color: #FFFCF2;
+  /* Match the bottom nav so the iOS home-indicator area (which shows the
+     page background, not the sized layout box) blends into the menu bar
+     instead of showing a cream strip. The cream app surface is painted by
+     the shell/screens on top of this. */
+  background-color: #3B0F0D;
   color: #3B0F0D;
   -webkit-font-smoothing: antialiased;
 }
