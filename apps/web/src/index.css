@@ -32,13 +32,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Anchor to the full screen (incl. safe areas, thanks to
-   viewport-fit=cover) rather than a percentage-height chain, whose box
-   excludes the safe areas in iOS standalone and leaves the home-indicator
-   strip painted with the propagated body background. */
 #root {
-  position: fixed;
-  inset: 0;
+  height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
