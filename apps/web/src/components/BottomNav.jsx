@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useSession } from '../context/SessionContext'
 import { useAuth } from '../context/AuthContext'
@@ -27,11 +28,20 @@ const AdminIcon = () => (
   </svg>
 )
 
+const LogoutIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+    <polyline points="16 17 21 12 16 7"/>
+    <line x1="21" y1="12" x2="9" y2="12"/>
+  </svg>
+)
+
 export default function BottomNav() {
   const navigate = useNavigate()
   const location = useLocation()
   const { inProgressSessions } = useSession()
-  const { role } = useAuth()
+  const { role, logout } = useAuth()
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const isHistory = location.pathname === '/history'
   const isAdmin = location.pathname.startsWith('/admin')
@@ -79,6 +89,46 @@ export default function BottomNav() {
           <AdminIcon />
           <span className="text-xs font-medium tracking-wide">Admin</span>
         </button>
+      )}
+
+      <button
+        onClick={() => setConfirmOpen(true)}
+        className="flex flex-col items-center justify-center py-3 px-4 gap-1 border-0 cursor-pointer transition-opacity"
+        style={{ backgroundColor: 'transparent', color: CREAM, opacity: 0.45 }}
+        aria-label="Logout"
+      >
+        <LogoutIcon />
+      </button>
+
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setConfirmOpen(false)}
+        >
+          <div
+            className="w-full max-w-[430px] rounded-t-2xl p-6 flex flex-col gap-4"
+            style={{ backgroundColor: CREAM }}
+            onClick={e => e.stopPropagation()}
+          >
+            <p className="text-base font-semibold text-center" style={{ color: BRAND }}>Log out?</p>
+            <p className="text-sm text-center text-gray-500">You'll need to sign in again to continue.</p>
+            <button
+              onClick={() => { logout(); navigate('/') }}
+              className="w-full py-3 rounded-xl font-semibold text-sm"
+              style={{ backgroundColor: BRAND, color: CREAM }}
+            >
+              Log out
+            </button>
+            <button
+              onClick={() => setConfirmOpen(false)}
+              className="w-full py-3 rounded-xl font-semibold text-sm"
+              style={{ backgroundColor: '#f3ede0', color: BRAND }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </nav>
   )
