@@ -22,11 +22,12 @@ From the front, there must be at least 3 clearly visible steps graduating from a
 - Collapsed layers: layers exist but are invisible when hair hangs naturally.
 
 LENGTH — Ruler-based:
-The AI does not measure pixels. It compares where the hair hem falls against the ruler in the photo. The reference annotation specifies the exact ruler mark. Results:
-- Hair ends above the mark (up to 1 inch longer): PASS.
-- Hair ends exactly at the mark: PASS.
-- Hair ends below the mark by any amount: FAIL — no exceptions.
-Hair cannot be made longer, only shorter. Being too short is always a MAJOR fail.
+The ruler is vertical; the cap is at the top and the hair hangs down. The reference annotation marks the minimum acceptable length (22 inches from the cap base). Results:
+- Hair ends ABOVE the reference mark on the ruler (hair does not reach 22"): FAIL — hair is too short. No exceptions.
+- Hair ends EXACTLY at the reference mark: PASS.
+- Hair ends UP TO 1 inch BELOW the reference mark (hair is 22"–23"): PASS — this is within the acceptable tolerance.
+- Hair ends MORE THAN 1 inch BELOW the reference mark (hair exceeds 23"): FAIL — hair is too long.
+Hair that is too short cannot be reworked by re-cutting. Being too short is always a MAJOR fail.
 
 END FINISH — Curled inward tips:
 The ends must taper to a soft, thin point that curls slightly inward. Fail types:
