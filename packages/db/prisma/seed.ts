@@ -25,8 +25,8 @@ LENGTH — Ruler-based:
 The ruler is vertical; the cap is at the top and the hair hangs down. The reference annotation marks the minimum acceptable length (22 inches from the cap base). Results:
 - Hair ends ABOVE the reference mark on the ruler (hair does not reach 22"): FAIL — hair is too short. No exceptions.
 - Hair ends EXACTLY at the reference mark: PASS.
-- Hair ends UP TO 1 inch BELOW the reference mark (hair is 22"–23"): PASS — this is within the acceptable tolerance.
-- Hair ends MORE THAN 1 inch BELOW the reference mark (hair exceeds 23"): FAIL — hair is too long.
+- Hair ends UP TO 2 inches BELOW the reference mark (hair is 22"–24"): PASS — this is within the acceptable tolerance.
+- Hair ends MORE THAN 2 inches BELOW the reference mark (hair exceeds 24"): FAIL — hair is too long.
 Hair that is too short cannot be reworked by re-cutting. Being too short is always a MAJOR fail.
 
 END FINISH — Curled inward tips:
@@ -134,7 +134,7 @@ const SOFT_SIREN_CRITERIA = [
     label: 'Overall Length',
     description:
       'Using the vertical ruler as scale reference, check whether the hair hem aligns with the correct graduation mark as specified in the reference annotation. Hair must be at least 22 inches from cap base.',
-    acceptableStandard: 'Hem aligns with reference ruler mark ± acceptable tolerance. Must never fall short of 22". May be up to 1" longer.',
+    acceptableStandard: 'Hem aligns with reference ruler mark ± acceptable tolerance. Must never fall short of 22". May be up to 2" longer (max 24").',
     severityIfFailed: Severity.major,
     evaluationType: EvaluationType.positional,
     sortOrder: 1,
